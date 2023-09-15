@@ -197,7 +197,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             styles: Optional[str] = None,
                             extra_net: Optional[str] = None,
                             facefix: Optional[str] = None,
-                            facedetail: Optional[bool] = False,
+                            facedetail: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,

@@ -218,7 +218,7 @@ class SettingsCog(commands.Cog):
                                hypernet: Optional[str] = None,
                                lora: Optional[str] = None,
                                facefix: Optional[str] = None,
-                               facedetail: Optional[bool] = False,
+                               facedetail: Optional[bool] = None,
                                highres_fix: Optional[str] = None,
                                clip_skip: Optional[int] = None,
                                strength: Optional[str] = None,
