@@ -12,6 +12,8 @@ from core import ctxmenuhandler
 from core import queuehandler
 from core import viewhandler
 from core import settings
+from core.queuehandler import GlobalQueue
+from core.leaderboardcog import LeaderboardCog
 
 
 class IdentifyCog(commands.Cog):
@@ -137,8 +139,12 @@ class IdentifyCog(commands.Cog):
             embed = discord.Embed(title='identify failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+
+        # update the leaderboard
+        LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Identify_Count")
+
         # check each queue for any remaining tasks
-        queuehandler.process_queue()
+        GlobalQueue.process_queue()
 
 
 def setup(bot):

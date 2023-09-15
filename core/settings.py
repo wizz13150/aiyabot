@@ -36,23 +36,23 @@ save_outputs = "True"
 dir = "outputs"
 
 # The limit of tasks a user can have waiting in queue (at least 1)
-queue_limit = 1
+queue_limit = 99
 
 # Whether or not buttons keep generating in batches ("True"/"False")
-batch_buttons = "False"
+batch_buttons = "True"
 
 # Whether or not buttons are restricted to user who requested image ("True"/"False")
-restrict_buttons = "True"
+restrict_buttons = "False"
 
 # The maximum value allowed for width/height (keep as multiple of 64)
-max_size = 1024
+max_size = 832
 
 # The resize amount when using context menu Quick Upscale
 quick_upscale_resize = 2.0
 
 # AIYA won't generate if prompt has any words in the ban list
 # Separate with commas; example, ["a", "b", "c"]
-prompt_ban_list = []
+prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Cock", "Anal", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
 # These words will be automatically removed from the prompt
 prompt_ignore_list = []
 # Choose whether or not ignored words are displayed to user
@@ -62,26 +62,27 @@ negative_prompt_prefix = []
 
 
 # the fallback channel defaults template for AIYA if nothing is set
-negative_prompt = ""
-data_model = ""
-steps = 30
-max_steps = 50
-width = 512
-height = 512
-guidance_scale = "7.0"
-sampler = "Euler a"
+negative_prompt = "(worst quality:2), (low quality:2), (normal quality:2), lowres, easynegative, signature, watermark, username, cropped"
+data_model = "Default(Lyriel)"
+steps = 33
+max_steps = 100
+width = 832
+height = 1216
+guidance_scale = "8.0"
+sampler = "DPM++ 2M SDE Karras"
 style = "None"
 facefix = "None"
 highres_fix = "Disabled"
 clip_skip = 1
 hypernet = "None"
 hyper_multi = "0.85"
-lora = "None"
+lora = "Details"
 lora_multi = "0.85"
 strength = "0.75"
 batch = "1,1"
-max_batch = "1,1"
+max_batch = "32,1"
 upscaler_1 = "ESRGAN_4x"
+facedetail = "False"
 """
 
 
@@ -91,6 +92,8 @@ class GlobalVar:
     dir = ""
     wait_message = []
     wait_message_count = 0
+    wait_message_prompt = []
+    wait_message_prompt_count = 0
     embed_color = discord.Colour.from_rgb(222, 89, 28)
     gradio_auth = None
     username: Optional[str] = None
@@ -231,6 +234,11 @@ def messages():
     return random_message
 
 
+def messages_prompt():
+    random_message_prompt = global_var.wait_message_prompt[random.randint(0, global_var.wait_message_prompt_count)]
+    return random_message_prompt
+
+
 def check(channel_id):
     try:
         read(str(channel_id))
@@ -276,6 +284,7 @@ def generate_template(template_pop, config):
     template_pop['batch'] = config['batch']
     template_pop['max_batch'] = config['max_batch']
     template_pop['upscaler_1'] = config['upscaler_1']
+    template_pop['facedetail'] = config['facedetail']
     return template_pop
 
 
@@ -413,6 +422,15 @@ def startup_check():
             print(f'Waiting for Web UI at {global_var.url}...')
             time.sleep(20)
 
+def check_webui_running(global_var):
+    try:
+        response = requests.get(global_var.url + '/sdapi/v1/cmd-flags')
+        if response.status_code == 404:
+            print('API is unreachable! Please check the WebUI manually.')
+            return True
+    except Exception as e:
+        print(f'An exception occurred while checking if the WebUI is online:\ns{str(e)}')
+    return False
 
 def files_check():
     # load random messages for aiya to say
@@ -421,6 +439,12 @@ def files_check():
         for row in message_data:
             global_var.wait_message.append(row[0])
     global_var.wait_message_count = len(global_var.wait_message) - 1
+
+    with open(f'{path}messages_prompt.csv', encoding='UTF-8') as csv_file:
+        message_prompt_data = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_prompt_data:
+            global_var.wait_message_prompt.append(row[0])
+    global_var.wait_message_prompt_count = len(global_var.wait_message_prompt) - 1
 
     # creating files if they don't exist
     if os.path.isfile(f'{path}stats.txt'):

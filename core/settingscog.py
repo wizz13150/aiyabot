@@ -19,6 +19,10 @@ class SettingsCog(commands.Cog):
         ]
 
     # do for any other lists that may exceed 25 values
+    def sampler_autocomplete(self: discord.AutocompleteContext):
+        return [
+            sampler for sampler in settings.global_var.sampler_names
+        ]
     def style_autocomplete(self: discord.AutocompleteContext):
         return [
             style for style in settings.global_var.style_names
@@ -121,7 +125,7 @@ class SettingsCog(commands.Cog):
         str,
         description='Set default sampler for the channel',
         required=False,
-        choices=settings.global_var.sampler_names,
+        autocomplete=discord.utils.basic_autocomplete(sampler_autocomplete),
     )
     @option(
         'styles',
@@ -171,6 +175,12 @@ class SettingsCog(commands.Cog):
         description='Set default strength (for init_img) for the channel (0.0 to 1.0).'
     )
     @option(
+        'facedetail',
+        bool,
+        description='Improves facial details for wider compositions.',
+        required=False,
+    )
+    @option(
         'batch',
         str,
         description='Set default batch for the channel (count,size)',
@@ -208,6 +218,7 @@ class SettingsCog(commands.Cog):
                                hypernet: Optional[str] = None,
                                lora: Optional[str] = None,
                                facefix: Optional[str] = None,
+                               facedetail: Optional[bool] = False,
                                highres_fix: Optional[str] = None,
                                clip_skip: Optional[int] = None,
                                strength: Optional[str] = None,
@@ -215,6 +226,11 @@ class SettingsCog(commands.Cog):
                                max_batch: Optional[str] = None,
                                upscaler_1: Optional[str] = None,
                                refresh: Optional[bool] = False):
+        # Check if the user has the 'Moderator' role
+        if not any(role.name == 'Moderator' for role in ctx.author.roles):
+            await ctx.send_response('Sorry, you need the "Moderator" Role to use the settings command (:', ephemeral=True)
+            return
+            
         # get the channel id and check if a settings file exists
         channel = '% s' % ctx.channel.id
         settings.check(channel)
@@ -316,6 +332,11 @@ class SettingsCog(commands.Cog):
         if facefix is not None:
             settings.update(channel, 'facefix', facefix)
             new += f'\nFacefix: ``"{facefix}"``'
+            set_new = True
+
+        if facedetail is not None:
+            settings.update(channel, 'facedetail', facedetail)
+            new += f'\nFacedetail: ``"{facedetail}"``'
             set_new = True
 
         if highres_fix is not None:

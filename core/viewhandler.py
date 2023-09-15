@@ -33,10 +33,12 @@ input_tuple[0] = ctx
 [17] = clip_skip
 [18] = extra_net
 [19] = epoch_time
+[20] = facedetail
+[21] = poseref
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
                'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles', 'facefix',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time']
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'facedetail', 'poseref']
 
 
 # the modal that is used for the 🖋 button
@@ -209,7 +211,6 @@ class DrawModal(Modal):
                     await interaction.response.send_message(embed=embed_err, ephemeral=True)
                     await infocog.InfoView.button_style(infocog_view, '', interaction)
                     return
-
             if 'facefix:' in line:
                 if line.split(':', 1)[1] in settings.global_var.facefix_models:
                     pen[15] = line.split(':', 1)[1]
@@ -217,6 +218,17 @@ class DrawModal(Modal):
                     invalid_input = True
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` can't fix faces! I have suggestions.",
                                         value=', '.join(['`%s`' % x for x in settings.global_var.facefix_models]),
+                                        inline=False)
+            if 'facedetail:' in line:
+                value = line.split(':', 1)[1].replace(",", ".").strip()
+                if value.lower() == "true":
+                    pen[20] = True
+                elif value.lower() == "false":
+                    pen[20] = False
+                else:
+                    invalid_input = True
+                    embed_err.add_field(name=f"`{value}` is not valid for facedetail!.",
+                                        value='Make sure you enter a boolean (True or False).',
                                         inline=False)
             if 'clip_skip:' in line:
                 try:
@@ -320,7 +332,8 @@ class DrawView(View):
     # the 🖋 button will allow a new prompt and keep same parameters for everything else
     @discord.ui.button(
         custom_id="button_re-prompt",
-        emoji="🖋")
+        emoji="🖋",
+        label="Edit")
     async def button_draw(self, button, interaction):
         buttons_free = True
         try:
@@ -350,7 +363,8 @@ class DrawView(View):
     # the 🎲 button will take the same parameters for the image, change the seed, and add a task to the queue
     @discord.ui.button(
         custom_id="button_re-roll",
-        emoji="🎲")
+        emoji="🎲",
+        label="Re-roll")
     async def button_roll(self, button, interaction):
         buttons_free = True
         try:
@@ -396,8 +410,9 @@ class DrawView(View):
     
     # the ⬆️ button will upscale the selected image
     @discord.ui.button(
-        custom_id="button_upscale",
-        emoji="⬆️")
+    custom_id="button_upscale",
+    emoji="⬆️",
+    label="Upscale")
     async def button_upscale(self, button, interaction):
         buttons_free = True
         try:
@@ -447,7 +462,8 @@ class DrawView(View):
     # the 📋 button will let you review the parameters of the generation
     @discord.ui.button(
         custom_id="button_review",
-        emoji="📋")
+        emoji="📋",
+        label="Review")
     async def button_review(self, button, interaction):
         # reuse "read image info" command from ctxmenuhandler
         init_url = None
@@ -469,14 +485,11 @@ class DrawView(View):
     # the button to delete generated images
     @discord.ui.button(
         custom_id="button_x",
-        emoji="❌")
+        emoji="❌",
+        label="Delete")
     async def delete(self, button, interaction):
         try:
-            # check if the output is from the person who requested it
-            if interaction.user.id == self.input_tuple[0].author.id:
-                await interaction.message.delete()
-            else:
-                await interaction.response.send_message("You can't delete other people's images!", ephemeral=True)
+            await interaction.message.delete()
         except(Exception,):
             button.disabled = True
             await interaction.response.edit_message(view=self)
@@ -490,7 +503,8 @@ class DeleteView(View):
 
     @discord.ui.button(
         custom_id="button_x_solo",
-        emoji="❌")
+        emoji="❌",
+        label="Delete")
     async def delete(self, button, interaction):
         try:
             # check if the output is from the person who requested it
@@ -566,7 +580,7 @@ class UpscaleMenu(discord.ui.Select):
                 upscaler_1 = settings.read(channel)['upscaler_1']
                 upscale_tuple = (ctx, '2.0', init_image, upscaler_1, "None", '0.5', '0.0', '0.0', False) # Create defaults for upscale. If desired we can add options to the per channel upscale settings for this.
 
-                print(f'Upscaling -- {interaction.user.name}#{interaction.user.discriminator}')
+                print(f'Upscaling request -- {interaction.user.name}#{interaction.user.discriminator} for {partial_path}')
 
                 # set up the draw dream and do queue code again for lack of a more elegant solution
                 draw_dream = upscalecog.UpscaleCog(self)

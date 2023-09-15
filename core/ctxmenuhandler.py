@@ -68,8 +68,8 @@ async def parse_image_info(ctx, image_url, command):
 
         # initialize extra params
         steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
-        style, facefix, highres_fix, clip_skip = '', '', '', ''
-        strength, has_init_url = '', False
+        style, facefix, facedetail, highres_fix, clip_skip = '', '', False, '', ''
+        strength, poseref, has_init_url = '', '', False
         if command == 'button' and ctx is not None:
             has_init_url = True
 
@@ -111,10 +111,14 @@ async def parse_image_info(ctx, image_url, command):
 
             if 'Face restoration: ' in line:
                 facefix = line.split(': ', 1)[1]
+            if 'Face detailer: ' in line:
+                facedetail = line.split(': ', 1)[1]
             if 'Hires upscaler: ' in line:
                 highres_fix = line.split(': ', 1)[1]
             if 'Clip skip: ' in line:
                 clip_skip = line.split(': ', 1)[1]
+            if 'Pose Reference: ' in line:
+                poseref = line.split(': ', 1)[1]
 
             if 'Denoising strength: ' in line:
                 strength = line.split(': ', 1)[1]
@@ -169,6 +173,9 @@ async def parse_image_info(ctx, image_url, command):
         if facefix:
             copy_command += f' facefix:{facefix}'
             extra_params += f'\nFace restoration model: ``{facefix}``'
+        if facedetail:
+            copy_command += f' facedetail:{facedetail}'
+            extra_params += f'\nFace detailer: ``{facedetail}``'
         if highres_fix:
             copy_command += f' highres_fix:{highres_fix}'
             extra_params += f'\nHigh-res fix: ``{highres_fix}``'
@@ -189,6 +196,9 @@ async def parse_image_info(ctx, image_url, command):
         if has_init_url:
             # not interested in adding embed fields for strength and init_image
             copy_command += f' strength:{strength} init_url:{str(ctx)}'
+        if poseref:
+            copy_command += f' poseref:{poseref}'
+            extra_params += f'\nPose Reference URL: ``{poseref}``'
 
         embed.add_field(name=f'Command for copying', value=f'', inline=False)
         embed.set_footer(text=copy_command)
@@ -198,7 +208,6 @@ async def parse_image_info(ctx, image_url, command):
 
         await ctx.respond(embed=embed, ephemeral=True)
     except Exception as e:
-        print('The image info command broke: ' + str(e))
         if command == 'slash':
             message = "\nIf you're copying from Discord and think there should be image info," \
                       " try **Copy Link** instead of **Copy Image**"
