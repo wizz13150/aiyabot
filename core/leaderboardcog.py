@@ -50,7 +50,7 @@ class LeaderboardCog(commands.Cog):
     @commands.slash_command(name='leaderboard', description='Show the Leaderboard', guild_only=True)
     async def show_leaderboard(self, ctx):
 
-        print(f'/Leaderboard request -- {ctx.author.id} --')
+        print(f'/Leaderboard request -- {ctx.author.name} --')
 
         try:
             leaderboard_data = []

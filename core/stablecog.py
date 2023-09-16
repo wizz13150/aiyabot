@@ -435,6 +435,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             model_payload = {
                 "sd_model_checkpoint": queue_object.data_model
             }
+
+            style_to_use = queue_object.styles
+            if "zavyyumexl" in queue_object.data_model.lower():
+                style_to_use = "Yume Style"
+                queue_object.negative_prompt = ""
+
             payload = {
                 "prompt": queue_object.prompt,
                 "negative_prompt": queue_object.negative_prompt,
@@ -450,7 +456,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "n_iter": queue_object.batch[0],
                 "batch_size": queue_object.batch[1],
                 "styles": [
-                    queue_object.styles
+                    style_to_use
                 ]
             }
 
@@ -509,14 +515,13 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         "args": [
                             {
                                 "input_image": 'data:image/png;base64,' + pimage,
-                                "module": "openpose_full", 
-                                "model": "controlnetxlCNXL_thibaudOpenpose [c7b9cadd]",
                                 "control_mode": "Balanced",
-                                "guidance_end": 1,
-                                "guidance_start": 0,
                                 "pixel_perfect": True,
-                                "processor_res": 512,
-                                "resize_mode": "Crop and Resize",
+                                "loopback": False,
+                                "low_vram": False,
+                                "module": "openpose_full",
+                                "model": "controlnetxlCNXL_thibaudOpenposeLora [72a4faf9]",
+                                "resize_mode": "Resize and Fill",
                                 "weight": 1
                             }
                         ]

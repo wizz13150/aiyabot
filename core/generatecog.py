@@ -71,6 +71,64 @@ class BigButton(Button):
         await interaction.response.edit_message(view=self.parent_view)
 
 
+class ChromaButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Chroma", custom_id="chroma", emoji="✨", style=1)
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        self.style = 3  # Set this button to green
+        for item in self.parent_view.children:
+            if isinstance(item, YumeButton):
+                item.style = 1  # Set the other button to default color
+        self.parent_view.selected_model = "ZavyChromaXL"
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class YumeButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Yume", custom_id="yume", emoji="🌟", style=1)
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        self.style = 3  # Set this button to green
+        for item in self.parent_view.children:
+            if isinstance(item, ChromaButton):
+                item.style = 1  # Set the other button to default color
+        self.parent_view.selected_model = "ZavyYumeXL"
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class FaceDetailerButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Face Details", custom_id="face_detailer", emoji="🎭", style=1)
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        if self.style == 1:  # Default color
+            self.style = 3  # Set this button to green
+            self.parent_view.face_detailer = True
+        else:
+            self.style = 1  # Set the button to default color
+            self.parent_view.face_detailer = None
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class BatchButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Batch: 1", custom_id="batch", style=1)  # Start with default value of 2
+        self.parent_view = parent_view
+        self.batch_values = ['1', '2', '4']
+        self.current_index = 0
+
+    async def callback(self, interaction):
+        # Increment the index and loop back to 0 if necessary
+        self.current_index = (self.current_index + 1) % 3
+        self.label = f"Batch: {self.batch_values[self.current_index]}"
+        self.parent_view.batch_value = self.batch_values[self.current_index]
+        await interaction.response.edit_message(view=self.parent_view)
+
+
 class PromptButton(Button):
     def __init__(self, label, prompt_index, parent_view):
         super().__init__(
@@ -81,9 +139,9 @@ class PromptButton(Button):
 
     async def callback(self, interaction):
         try:
-            #print("Entering PromptButton callback")
             await interaction.response.defer()
 
+            # ratio user choice
             size_ratio = None
             if self.parent_view.selected_orientation == "Portrait" and self.parent_view.selected_size == "Medium":
                 size_ratio = "Portrait_Medium (832x1216)"
@@ -94,10 +152,21 @@ class PromptButton(Button):
             elif self.parent_view.selected_orientation == "Landscape" and self.parent_view.selected_size == "Big":
                 size_ratio =  "Landscape_Big (1536x1024)"
 
+            # model user choice
+            model_choice = self.parent_view.selected_model
+
+            # adetailer user choice
+            face_detailer_choice = self.parent_view.face_detailer
+
+            # batch user choice
+            batch_choice = str(self.parent_view.batch_value)
+
             prompt_index = int(self.custom_id.split("_")[1])
             prompt = self.parent_view.prompts[prompt_index]
             self.parent_view.ctx.called_from_button = True
-            await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt, size_ratio=size_ratio)
+            await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt, size_ratio=size_ratio, 
+                                          data_model=model_choice, facedetail=face_detailer_choice,
+                                          batch=batch_choice)
             await interaction.edit_original_response(view=self.parent_view)
         except Exception as e:
             print(f'The draw button broke: {str(e)}')
@@ -178,10 +247,17 @@ class GenerateView(View):
         self.add_item(LandscapeButton(parent_view=self))
         self.add_item(NormalButton(parent_view=self))
         self.add_item(BigButton(parent_view=self))
+        self.add_item(ChromaButton(parent_view=self))
+        self.add_item(YumeButton(parent_view=self))
+        self.add_item(FaceDetailerButton(parent_view=self))
+        self.add_item(BatchButton(parent_view=self))
 
         # Attributes to store the selected orientation and size
-        self.selected_orientation = "Portrait"  # Default
-        self.selected_size = "Medium"  # Default
+        self.selected_orientation = "Portrait"
+        self.selected_size = "Medium"
+        self.selected_model = "Chroma"
+        self.face_detailer = None
+        self.batch_value = 1
 
     async def interaction_check(self, interaction):
         return True
