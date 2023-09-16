@@ -14,7 +14,7 @@ from core.stablecog import StableCog
 
 # Define a View for the metadata buttons
 class MetaView(ui.View):
-    def __init__(self, ctx, metadata_raw, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip):
+    def __init__(self, ctx, metadata_raw, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip, data_model):
         super().__init__(timeout=None)
 
         self.ctx = ctx
@@ -28,7 +28,7 @@ class MetaView(ui.View):
         self.size = size if size != "N/A" else None
         self.clip_skip = int(clip_skip) if clip_skip != "N/A" else None
         self.batch_value = '1'
-        # self.data_model = data_model if data_model != "N/A" else None # Down until v1.6.0 webui is fixed to load old SD1.5 models
+        self.data_model = data_model if data_model != "N/A" else None
 
     @discord.ui.button(
         custom_id="button_draw_from_meta",
@@ -60,10 +60,11 @@ class MetaView(ui.View):
             if self.clip_skip is not None:
                 dream_args['clip_skip'] = self.clip_skip
             dream_args['batch'] = self.batch_value
+            #dream_args['styles'] = "Yume Style"
 
             # Model selection
-            #if self.data_model is not None and self.data_model in settings.global_var.model_info:
-            #    dream_args['data_model'] = self.data_model            
+            if self.data_model is not None and (self.data_model.lower().startswith("zavychromaxl") or self.data_model.lower().startswith("zavyyumexl")):
+                dream_args['data_model'] = self.data_model
 
             # Using **dream_args unpacks the dictionary into keyword arguments for the function
             self.ctx.called_from_button = True
@@ -145,6 +146,16 @@ class MetaCog(commands.Cog):
     async def on_ready(self):
         self.bot.add_view(MetaView(self))
 
+    def extract_prompt_from_string(self, s):
+        parts = s.split(", soft outlines, magnificent, ethereal, painterly, epic, fantasy art, dreamy.")
+        if len(parts) == 2:
+            start_part = parts[0]
+            # Splitting the starting part to get the actual prompt
+            prompt_parts = start_part.split("Disney style, ")
+            if len(prompt_parts) == 2:
+                return prompt_parts[1]
+        return None  # Return None if extraction failed
+
     # Define a slash command for extracting metadata
     @commands.slash_command(name='meta', description='Extract Generation datas from an image', guild_only=True)
     @option(
@@ -163,7 +174,6 @@ class MetaCog(commands.Cog):
 
         print(f"/Meta request -- {ctx.author.name}#{ctx.author.discriminator} ... Image: {init_image if init_image else 'None'}, URL: {init_url if init_url else 'None'}")
         
-        has_image = True
         if init_url:
             try:
                 response = requests.get(init_url)
@@ -186,6 +196,9 @@ class MetaCog(commands.Cog):
             # Extract different parts as you specified
             prompt_end = metadata.find("Negative prompt:") if "Negative prompt:" in metadata else metadata.find("Steps:")
             prompt = metadata[:prompt_end].strip()
+            extracted_prompt = self.extract_prompt_from_string(prompt)
+            if extracted_prompt:
+                prompt = extracted_prompt
 
             if "Negative prompt:" in metadata and "Steps:" in metadata:
                 negative_prompt_start = metadata.find("Negative prompt:") + len("Negative prompt:")
@@ -215,7 +228,7 @@ class MetaCog(commands.Cog):
             seed = extracted_metadata['Seed']
             size = extracted_metadata['Size']
             clip_skip = extracted_metadata['Clip skip']
-            #data_model = extracted_metadata['Model']  
+            data_model = extracted_metadata['Model']  
 
             # Start building the copy_command
             copy_command = f'/draw prompt:{prompt}'
@@ -270,14 +283,14 @@ class MetaCog(commands.Cog):
             embed.set_footer(text=copy_command)
 
             # Create an instance of MetaView and pass the raw metadata
-            view = MetaView(ctx, metadata, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip)
+            view = MetaView(ctx, metadata, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip, data_model)
 
             # Add the view when you send the message
             await ctx.respond(content=f'<@{ctx.author.id}>', embed=embed, file=file, view=view)
         else:
             fail_message = "\nIf you're copying from Discord and think there should be image info," \
                         " try **Copy Link** instead of **Copy Image**"
-            await ctx.respond("🚫 No metadata found. Please try again with a valid image! 📸{fail_message}", ephemeral=True)
+            await ctx.respond(f'🚫 No metadata found. Please try again with a valid image! 📸{fail_message}', ephemeral=True)
 
 def setup(bot):
     bot.add_cog(MetaCog(bot))
