@@ -16,6 +16,32 @@ from core.queuehandler import GlobalQueue
 from core.leaderboardcog import LeaderboardCog
 
 
+class CaptionView(discord.ui.View):
+    def __init__(self, ctx, caption):
+        super().__init__(timeout=None)
+        self.ctx = ctx
+        self.caption = caption
+
+    @discord.ui.button(
+        custom_id="button_draw_from_caption",
+        emoji="🎨",
+        label="Draw from Caption")
+    async def draw_from_caption(self, button: discord.ui.Button, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+            self.ctx.called_from_button = True
+            
+            # Calling dream_handler with the caption as prompt
+            await IdentifyCog.dream_handler(self.ctx, prompt=self.caption)
+
+            await interaction.edit_original_response(view=self)
+        except Exception as e:
+            print(f'The Draw from Caption button broke: {str(e)}')
+            self.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
+
+
 class IdentifyCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -118,21 +144,26 @@ class IdentifyCog(commands.Cog):
             # post to discord
             def post_dream():
                 caption = response_data.get('caption')
-                embed_title = 'I think this is'
+                embed_title = 'Image Description'
                 if len(caption) > 4096:
                     caption = caption[:4096]
 
-                embed = discord.Embed(title=f'{embed_title}', description=f'``{caption}``')
+                embed = discord.Embed(title=embed_title, description=f'*{caption}*')
                 embed.set_image(url=queue_object.init_image)
                 embed.colour = settings.global_var.embed_color
-                footer_args = dict(text=f'{queue_object.ctx.author.name}#{queue_object.ctx.author.discriminator}')
+                footer_text = f"Submitted by: {queue_object.ctx.author.name}#{queue_object.ctx.author.discriminator}"
                 if queue_object.ctx.author.avatar is not None:
-                    footer_args['icon_url'] = queue_object.ctx.author.avatar.url
-                embed.set_footer(**footer_args)
+                    footer_icon = queue_object.ctx.author.avatar.url
+                else:
+                    footer_icon = None
+                embed.set_footer(text=footer_text, icon_url=footer_icon)
+
+                # create an instance of CaptionView and pass the caption
+                view = CaptionView(queue_object.ctx, caption)
 
                 queuehandler.process_post(
                     self, queuehandler.PostObject(
-                        self, queue_object.ctx, content=f'<@{queue_object.ctx.author.id}>', file='', embed=embed, view=queue_object.view))
+                        self, queue_object.ctx, content=f'<@{queue_object.ctx.author.id}>Here\'s what I think the image represents:', file='', embed=embed, view=view))
             Thread(target=post_dream, daemon=True).start()
 
         except Exception as e:

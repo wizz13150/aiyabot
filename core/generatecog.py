@@ -73,7 +73,7 @@ class BigButton(Button):
 
 class ChromaButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Chroma", custom_id="chroma", emoji="✨", style=1)
+        super().__init__(label="ZavyChromaXL", custom_id="chroma", emoji="✨", style=1)
         self.parent_view = parent_view
 
     async def callback(self, interaction):
@@ -87,7 +87,7 @@ class ChromaButton(Button):
 
 class YumeButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Yume", custom_id="yume", emoji="🌟", style=1)
+        super().__init__(label="ZavyYumeXL", custom_id="yume", emoji="🌟", style=1)
         self.parent_view = parent_view
 
     async def callback(self, interaction):
@@ -255,7 +255,7 @@ class GenerateView(View):
         # Attributes to store the selected orientation and size
         self.selected_orientation = "Portrait"
         self.selected_size = "Medium"
-        self.selected_model = "Chroma"
+        self.selected_model = "ZavyChromaXL"
         self.face_detailer = None
         self.batch_value = 1
 
