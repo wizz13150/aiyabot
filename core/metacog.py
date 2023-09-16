@@ -16,7 +16,7 @@ from core.stablecog import StableCog
 class MetaView(ui.View):
     def __init__(self, ctx, metadata_raw, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip):
         super().__init__(timeout=None)
-        
+
         self.ctx = ctx
         self.metadata_raw = metadata_raw
         self.prompt = prompt if prompt != "N/A" else None
@@ -27,19 +27,20 @@ class MetaView(ui.View):
         self.seed = int(seed) if seed != "N/A" else None
         self.size = size if size != "N/A" else None
         self.clip_skip = int(clip_skip) if clip_skip != "N/A" else None
+        self.batch_value = '1'
         # self.data_model = data_model if data_model != "N/A" else None # Down until v1.6.0 webui is fixed to load old SD1.5 models
 
     @discord.ui.button(
         custom_id="button_draw_from_meta",
         emoji="🎨",
-        label="Draw From Meta")
+        label="Draw")
     async def draw_from_meta(self, button: ui.Button, interaction: discord.Interaction):
         try:
             await interaction.response.defer()
-            
+
             # Construct dynamic arguments for StableCog.dream_handler
             dream_args = {}
-        
+
             if self.prompt is not None:
                 dream_args['prompt'] = self.prompt
             if self.negative_prompt is not None:
@@ -58,11 +59,12 @@ class MetaView(ui.View):
                 dream_args['seed'] = self.seed
             if self.clip_skip is not None:
                 dream_args['clip_skip'] = self.clip_skip
-                
+            dream_args['batch'] = self.batch_value
+
             # Model selection
             #if self.data_model is not None and self.data_model in settings.global_var.model_info:
             #    dream_args['data_model'] = self.data_model            
-            
+
             # Using **dream_args unpacks the dictionary into keyword arguments for the function
             self.ctx.called_from_button = True
             await StableCog.dream_handler(self.ctx, **dream_args)
@@ -72,12 +74,26 @@ class MetaView(ui.View):
             self.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)    
-            
-    # Define a button for copying generation data
+
+    # Batch selection button
+    @discord.ui.button(
+        custom_id="batch",
+        label="Batch: 1",
+        style=discord.ButtonStyle.primary)  # Start with default value of 1
+    async def batch_button(self, button: ui.Button, interaction: discord.Interaction):
+        batch_values = ['1', '2', '4']
+        current_index = batch_values.index(self.batch_value)
+        # Increment the index and loop back to 0 if necessary
+        next_index = (current_index + 1) % 3
+        self.batch_value = batch_values[next_index]
+        button.label = f"Batch: {self.batch_value}"
+        await interaction.response.edit_message(view=self)
+
+    # Define a button for copying raw generation data
     @discord.ui.button(
         custom_id="button_copy_generation_data_meta",
         emoji="📋",
-        label="Copy Generation Datas")
+        label="Copy Raw Datas")
     async def copy_generation_data(self, button: ui.Button, interaction: discord.Interaction):
         try:
             metadata_cleaned = self.metadata_raw.replace("\n", ", ")
@@ -87,8 +103,9 @@ class MetaView(ui.View):
                 title="──── Generation Datas────", 
                 description=f"```\nPrompt: {metadata_cleaned}\n```", 
                 color=random.randint(0, 0xFFFFFF)
-            )     
-            await interaction.response.send_message(content=f"<@{interaction.user.id}>", embed=embed)
+            )
+            delete_view = DeleteView()
+            await interaction.response.send_message(content=f"<@{interaction.user.id}>", embed=embed, view=delete_view)
         except Exception as e:
             print(f'The Copy Generation Datas button broke: {str(e)}')
             self.disabled = True
@@ -102,6 +119,21 @@ class MetaView(ui.View):
         label="Delete")
     async def delete_meta(self, button: ui.Button, interaction: discord.Interaction):
         await interaction.message.delete()
+
+
+class DeleteView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # No timeout for the view
+
+    @discord.ui.button(custom_id="button_x", emoji="❌", label="Delete")
+    async def delete(self, button, interaction):
+        try:
+            await interaction.message.delete()
+        except(Exception,):
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("I may have been restarted. This button no longer works.\n"
+                                            "You can react with ❌ to delete the image.", ephemeral=True)
 
 
 # Define the MetaCog class
@@ -183,7 +215,28 @@ class MetaCog(commands.Cog):
             seed = extracted_metadata['Seed']
             size = extracted_metadata['Size']
             clip_skip = extracted_metadata['Clip skip']
-            data_model = extracted_metadata['Model']  
+            #data_model = extracted_metadata['Model']  
+
+            # Start building the copy_command
+            copy_command = f'/draw prompt:{prompt}'
+
+            if negative_prompt != "N/A":
+                copy_command += f' negative_prompt:{negative_prompt}'
+            if steps != "N/A":
+                copy_command += f' steps:{steps}'
+            if size != "N/A":
+                width, height = size.split("x")
+                copy_command += f' width:{width} height:{height}'
+            if cfg_scale != "N/A":
+                copy_command += f' guidance_scale:{cfg_scale}'
+            if sampler != "N/A":
+                copy_command += f' sampler:{sampler}'
+            if seed != "N/A":
+                copy_command += f' seed:{seed}'
+            if clip_skip != "N/A":
+                copy_command += f' clip_skip:{clip_skip}'
+            #if data_model != "N/A":
+            #    copy_command += f' data_model:{data_model}'
 
             # Create the full Embed description from the extracted metadata
             full_extracted_metadata_str = f"🌟 **Model:** `{metadata_dict.get('Model', 'N/A')}`\n"
@@ -212,13 +265,19 @@ class MetaCog(commands.Cog):
             file = discord.File(image_data, filename="preview.png")
             embed.set_thumbnail(url="attachment://preview.png")
 
+            # Add the command to the embed's footer
+            embed.add_field(name=f'Command for copying', value=f'', inline=False)
+            embed.set_footer(text=copy_command)
+
             # Create an instance of MetaView and pass the raw metadata
             view = MetaView(ctx, metadata, prompt, negative_prompt, steps, sampler, cfg_scale, seed, size, clip_skip)
 
             # Add the view when you send the message
             await ctx.respond(content=f'<@{ctx.author.id}>', embed=embed, file=file, view=view)
         else:
-            await ctx.respond("🚫 No metadata found. Please try again with a valid image! 📸", ephemeral=True)
+            fail_message = "\nIf you're copying from Discord and think there should be image info," \
+                        " try **Copy Link** instead of **Copy Image**"
+            await ctx.respond("🚫 No metadata found. Please try again with a valid image! 📸{fail_message}", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(MetaCog(bot))

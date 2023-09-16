@@ -279,6 +279,7 @@ async def quick_upscale(self, ctx, message: discord.Message):
             f'<@{ctx.author.id}>, upscaling {message}by ``{resize}``x using ``{upscaler_1}``!\n'
             f'Queue: ``{len(queuehandler.GlobalQueue.queue)}``', delete_after=45.0)
         
+        
 async def batch_download(ctx, message: discord.Message):
     # look for batch information in message
     all_content = message.content
