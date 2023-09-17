@@ -137,7 +137,7 @@ class DeforumCog(commands.Cog):
         antiblur_amount_schedule: str = "0: (0.1)",
         parseq_manifest: str = ""
     ):
-        print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, strength: {strength}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Frames: {frames}')
+        print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, strength: {strength}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
         if cadence < 1 or width  > 1216 or height  > 1216 or fps < 1 or max_frames < 1:
             await ctx.respond("Cadence must be greater than 3, width and height can't be larger than 1024 and fps not less than 1")
