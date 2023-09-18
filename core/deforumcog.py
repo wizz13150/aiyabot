@@ -5,7 +5,9 @@ import discord
 from discord.ext import commands
 from discord import option
 import typing, functools
+from typing import Optional
 import json
+import random
 import re
 
 
@@ -185,29 +187,29 @@ class DeforumCog(commands.Cog):
         self,
         ctx,
         prompts: str = "",
-        cadence: int = 6,
-        steps: int = 25,
-        seed: int = -1,
-        #strength: str = "0:(0.65)",
-        translation_x: str = "0:(0)",
-        translation_y: str = "0:(0)",
-        translation_z: str = "0:(1.5)",
-        rotation_3d_x: str = "0:(0)",
-        rotation_3d_y: str = "0:(0)",
-        rotation_3d_z: str = "0:(0)",
-        width: int = 768,
-        height: int = 512,
-        fps: int = 15,
-        max_frames: int = 120,
-        fov_schedule: str = "0:(120)",
-        noise_schedule: str = "0:(0.065)",
-        noise_multiplier_schedule: str = "0:(1.05)",
-        strength_schedule: str = "0:(0.65)",
-        cfg_scale_schedule: str = "0:(7)",
-        antiblur_amount_schedule: str = "0:(0.1)",
+        cadence: Optional[int] = 6,
+        steps: Optional[int] = 25,
+        seed: Optional[int] = -1,
+        #strength: Optional[str] = "0:(0.65)",
+        translation_x: Optional[str] = "0:(0)",
+        translation_y: Optional[str] = "0:(0)",
+        translation_z: Optional[str] = "0:(1.5)",
+        rotation_3d_x: Optional[str] = "0:(0)",
+        rotation_3d_y: Optional[str] = "0:(0)",
+        rotation_3d_z: Optional[str] = "0:(0)",
+        width: Optional[int] = 768,
+        height: Optional[int] = 512,
+        fps: Optional[int] = 15,
+        max_frames: Optional[int] = 120,
+        fov_schedule: Optional[str] = "0:(120)",
+        noise_schedule: Optional[str] = "0:(0.065)",
+        noise_multiplier_schedule: Optional[str] = "0:(1.05)",
+        strength_schedule: Optional[str] = "0:(0.65)",
+        cfg_scale_schedule: Optional[str] = "0:(7)",
+        antiblur_amount_schedule: Optional[str] = "0:(0.1)",
         #add_soundtrack: discord.Attachment = None,
-        frame_interpolation_engine: str = "None",
-        parseq_manifest: str = ""
+        frame_interpolation_engine: Optional[str] = "None",
+        parseq_manifest: Optional[str] = ""
     ):
         print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
@@ -282,12 +284,15 @@ class DeforumCog(commands.Cog):
         deforum_settings['W'] = width
         deforum_settings['H'] = height
         deforum_settings['fps'] = fps
+        # randomize the seed if still -1
+        if seed == -1:
+            seed = random.randint(1000000000, 9999999999)
         deforum_settings['seed'] = seed
         deforum_settings['max_frames'] = max_frames
         deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
         deforum_settings['parseq_manifest'] = parseq_manifest
 
-        print('Parsing prompts')
+        #print('Parsing prompts')
         try:
             prompts = self.parse_prompts(prompts)
         except Exception as e:
