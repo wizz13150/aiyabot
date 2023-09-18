@@ -4,46 +4,22 @@ import aiohttp
 import discord
 from discord.ext import commands
 from discord import option
-import requests
 import typing, functools
 import json
- 
- 
+import re
+
+
 class DeforumCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-        if not os.path.exists('deforum.json'):
-            # Si le fichier n'existe pas, créez-le avec le contenu par défaut
-            default_content = {
-                "URL": "http://127.0.0.1:7860/deforum/run",
-                "patreon": "https://patreon.com/deforum",
-                "anim_waittime": 10,
-                "true_frames_limit": 100
-            }
-            with open('deforum.json', 'w') as cfg_file:
-                json.dump(default_content, cfg_file, indent=4)
-
-        with open('deforum.json', 'r') as cfg_file:
-            self.config = json.loads(cfg_file.read())
-        assert self.config is not None
- 
         # Load the existing configuration or create a new one if it doesn't exist
         self.config = self.load_or_create_config('deforum.json')
-    
-    def load_default_settings(self, filename):
-        """Load the default settings from a file."""
-        if not os.path.exists(filename):
-            raise FileNotFoundError(f"Default settings file '{filename}' not found!")
-        
-        with open(filename, 'r') as file:
-            return json.load(file)
 
     def load_or_create_config(self, filename):
         """Load the existing configuration or create a new one if it doesn't exist."""
         if not os.path.exists(filename):
             default_content = {
-                "URL": "http://127.0.0.1:7860/deforum_api/batches",
+                "URL": "http://127.0.0.1:7860/deforum_api",
                 "patreon": "https://patreon.com/deforum",
                 "anim_waittime": 10,
                 "true_frames_limit": 100
@@ -55,6 +31,14 @@ class DeforumCog(commands.Cog):
             with open(filename, 'r') as cfg_file:
                 return json.load(cfg_file)
 
+    def load_default_settings(self, filename):
+        """Load the default settings from a file."""
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"Default settings file '{filename}' not found!")
+
+        with open(filename, 'r') as file:
+            return json.load(file)
+
     def to_thread(func: typing.Callable) -> typing.Coroutine:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -63,7 +47,7 @@ class DeforumCog(commands.Cog):
  
     async def make_animation(self, deforum_settings):
         try:
-            url = "http://127.0.0.1:7860/deforum_api/batches"
+            url = f"{self.config['URL']}/batches"
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json={
                     "deforum_settings": [deforum_settings],
@@ -81,15 +65,14 @@ class DeforumCog(commands.Cog):
                         print(f"Received job_id: {job_id}")
                         
                         # Wait for a short duration before checking the job status
-                        await asyncio.sleep(10)  # Wait for 10 seconds
-                        
+                        await asyncio.sleep(10)
+
                         while True:
                             # Check the job status
-                            job_status = await self.check_job_status(session, job_id)
-                            
+                            job_status = await self.check_job_status(session, job_id)                            
                             if job_status == "SUCCEEDED":
                                 # If the job succeeded, get the output directory
-                                job_data_url = f"http://127.0.0.1:7860/deforum_api/jobs/{job_id}"
+                                job_data_url = f"{self.config['URL']}/jobs/{job_id}"
                                 async with session.get(job_data_url) as job_data_response:
                                     job_data = await job_data_response.json()
                                     return job_data['outdir']
@@ -98,8 +81,8 @@ class DeforumCog(commands.Cog):
                                 print(f"Job failed. Status: {job_status}")
                                 return ""
                             else:
-                                print(f"Job status: {job_status}. Waiting for completion...")
-                                await asyncio.sleep(10)  # Wait for 10 seconds before checking again
+                                #print(f"Job status: {job_status}. Waiting for completion...")
+                                await asyncio.sleep(2)
                     else:
                         print(f"Bad status code {response.status}")
                         if response.status == 422:
@@ -112,7 +95,7 @@ class DeforumCog(commands.Cog):
             return ""
 
     async def check_job_status(self, session, job_id):
-        job_status_url = f"http://127.0.0.1:7860/deforum_api/jobs"
+        job_status_url = f"{self.config['URL']}/jobs"
         max_retries = 5
         retries = 0
         while retries < max_retries:
@@ -133,13 +116,18 @@ class DeforumCog(commands.Cog):
                 retries += 1
 
         print(f"Failed to get job status after {max_retries} attempts.")
-        return "ERROR"  # ou lever une exception personnalisée
+        return "ERROR"
 
- 
     def parse_prompts(self, string, filename='unknown'):
         frames = dict()
-        for match_object in string.split(","):
-            frameParam = match_object.split(":")
+
+        # Check if the string is a simple prompt without frame number
+        if ":" not in string:
+            frames["0"] = string.strip()
+            return frames
+
+        for match_object in re.split(r'\)\s*,', string):
+            frameParam = re.split(r':\s*\(', match_object)
             try:
                 frame = frameParam[0].strip()
                 frames[frame] = frameParam[1].strip()
@@ -189,9 +177,10 @@ class DeforumCog(commands.Cog):
     @option('strength_schedule', str, description='Adjust the Strength Schedule. (default="0:(0.65)"))', required=False, default="0:(0.65)")
     @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(7)"))', required=False, default="0:(7)")
     @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.1)"))', required=False, default="0:(0.1)")
-    @option('parseq_manifest', str, description='Parseq Manifest URL to use', required=False, default="")
-    #@option('add_soundtrack', str, description='Soundtrack option', required=False, default="")
-    
+    #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
+    @option('frame_interpolation_engine', str, description='Frame interpolation engine option (default="None", x3)', required=False, default="None", choices=["None", "FILM"])
+    @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
+
     async def deforum_handler(
         self,
         ctx,
@@ -199,7 +188,7 @@ class DeforumCog(commands.Cog):
         cadence: int = 6,
         steps: int = 25,
         seed: int = -1,
-        strength: str = "0:(0.65)",
+        #strength: str = "0:(0.65)",
         translation_x: str = "0:(0)",
         translation_y: str = "0:(0)",
         translation_z: str = "0:(1.5)",
@@ -216,21 +205,54 @@ class DeforumCog(commands.Cog):
         strength_schedule: str = "0:(0.65)",
         cfg_scale_schedule: str = "0:(7)",
         antiblur_amount_schedule: str = "0:(0.1)",
+        #add_soundtrack: discord.Attachment = None,
+        frame_interpolation_engine: str = "None",
         parseq_manifest: str = ""
     ):
-        print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, strength: {strength}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
+        print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
+        # Construct a dic for the default parameters to compare
+        default_params = {
+            "prompts": "",
+            "cadence": 6,
+            "steps": 30,
+            "seed": "",
+            "strength": "0:(0.65)",
+            "translation_x": "0:(0)",
+            "translation_y": "0:(0)",
+            "translation_z": "0:(1.5)",
+            "rotation_3d_x": "0:(0)",
+            "rotation_3d_y": "0:(0)",
+            "rotation_3d_z": "0:(0)",
+            "width": 768,
+            "height": 1216,
+            "fps": 15,
+            "max_frames": 120,
+            "fov_schedule": "0:(120)",
+            "noise_schedule": "0:(0.065)",
+            "noise_multiplier_schedule": "0:(1.05)",
+            "strength_schedule": "0:(0.65)",
+            "cfg_scale_schedule": "0:(7)",
+            "antiblur_amount_schedule": "0:(0.1)",
+            "frame_interpolation_engine": "None",
+            "parseq_manifest": ""
+        }
+        
         # Load the default settings from the file
         with open('default_settings.json', 'r') as settings_file:
             deforum_settings = json.load(settings_file)
 
-        if cadence <= 2 or width  > 1216 or height  > 1216 or fps < 1 or max_frames < 1:
+        if cadence < 0 or width  > 1216 or height  > 1216 or fps < 1 or max_frames < 1:
             await ctx.respond(f"<@{ctx.author.id}> Cadence must be greater than 2, width and height can't be larger than 1024 and fps not less than 1")
             return
         if max_frames / cadence > self.config['true_frames_limit']:
             await ctx.respond(f"<@{ctx.author.id}> With Cadence {cadence} the length of the animation is limited by {cadence * self.config['true_frames_limit']} frames")
             return
         
+        #if add_soundtrack:
+            # Now you can download or process the add_soundtrack as needed
+            #mp3_file = await add_soundtrack.to_file()
+            # Process the mp3_file...
         
         # construct deforum_settings
         # add wrapped values to deforum_settings
@@ -262,6 +284,7 @@ class DeforumCog(commands.Cog):
         deforum_settings['fps'] = fps
         deforum_settings['seed'] = seed
         deforum_settings['max_frames'] = max_frames
+        deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
         deforum_settings['parseq_manifest'] = parseq_manifest
 
         print('Parsing prompts')
@@ -270,11 +293,25 @@ class DeforumCog(commands.Cog):
         except Exception as e:
             await ctx.respond(f'<@{ctx.author.id}> Error parsing prompts!')
             return
-        
         deforum_settings["prompts"] = prompts 
-        #print(f'deforum_settings: {deforum_settings}')
 
-        await ctx.respond(f'<@{ctx.author.id}> Making a Deforum animation...')
+        # compare parameters to default
+        non_default_params = {key: value for key, value in locals().items() if key in default_params and default_params[key] != value}
+
+        # build the message to send if the options are not default
+        message = f'<@{ctx.author.id}> Making a Deforum animation...\n'
+        if non_default_params:
+            params_list = list(non_default_params.items())
+            for i in range(0, len(params_list), 3):
+                line_params = params_list[i:i+3]
+                for key, value in line_params:
+                    message += f"**{key}**: `{value}`  "
+                message += "\n"
+            if parseq_manifest != "":
+                message += f"**Parseq Manifest**: `Yes`\n"
+
+        await ctx.respond(message)
+
         print('Making a Deforum animation...')
         path = await self.make_animation(deforum_settings)
 
