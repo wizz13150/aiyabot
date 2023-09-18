@@ -162,15 +162,16 @@ class DeforumCog(commands.Cog):
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
     @option('prompts', str, description='The text for the animation.', required=True)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
-    @option('seed', int, description='The seed for the animation. (default=-1)', required=False, default=-1)
+    @option('steps', int, description='The steps for the animation. (default=25)', required=False, default=25)
+    @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
     @option('translation_x', str, description='The X translation for the animation. (default="0:(0)"))', required=False, default="0:(0)")
     @option('translation_y', str, description='The Y translation for the animation.(default="0:(0)"))', required=False, default="0:(0)")
     @option('translation_z', str, description='The Z translation (zoom) for the animation. (default="0:(1.5)"))', required=False, default="0:(1.5)")
     @option('rotation_3d_x', str, description='The 3D X rotation (around horizontal axe) for the animation. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_y', str, description='The 3D Y rotation (around vertical axe)for the animation. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_z', str, description='The 3D Z rotation (angle rotation) for the animation. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
-    @option('height', int, description='The height for the animation. (default=512))', required=False, default=512)
+    @option('width', int, description='The width for the animation. (default=832))', required=False, default=832)
+    @option('height', int, description='The height for the animation. (default=1216))', required=False, default=1216)
     @option('fps', int, description='The fps for the animation. (default=15))', required=False, default=15)
     @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(120)"))', required=False, default="0:(120)")
@@ -187,7 +188,7 @@ class DeforumCog(commands.Cog):
         self,
         ctx,
         prompts: str = "",
-        cadence: Optional[int] = 6,
+        cadence: Optional[int] = 5,
         steps: Optional[int] = 25,
         seed: Optional[int] = -1,
         #strength: Optional[str] = "0:(0.65)",
@@ -197,8 +198,8 @@ class DeforumCog(commands.Cog):
         rotation_3d_x: Optional[str] = "0:(0)",
         rotation_3d_y: Optional[str] = "0:(0)",
         rotation_3d_z: Optional[str] = "0:(0)",
-        width: Optional[int] = 768,
-        height: Optional[int] = 512,
+        width: Optional[int] = 832,
+        height: Optional[int] = 1216,
         fps: Optional[int] = 15,
         max_frames: Optional[int] = 120,
         fov_schedule: Optional[str] = "0:(120)",
@@ -284,7 +285,7 @@ class DeforumCog(commands.Cog):
         deforum_settings['W'] = width
         deforum_settings['H'] = height
         deforum_settings['fps'] = fps
-        # randomize the seed if still -1
+        # randomize the seed if still -1, 10 digits
         if seed == -1:
             seed = random.randint(1000000000, 9999999999)
         deforum_settings['seed'] = seed
