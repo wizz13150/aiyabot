@@ -171,7 +171,6 @@ class MetaCog(commands.Cog):
         required=False,
     )
     async def meta_handler(self, ctx, init_image: Optional[discord.Attachment] = None, init_url: Optional[str] = None):
-
         print(f"/Meta request -- {ctx.author.name}#{ctx.author.discriminator} ... Image: {init_image if init_image else 'None'}, URL: {init_url if init_url else 'None'}")
         
         if init_url:

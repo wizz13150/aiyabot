@@ -626,7 +626,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 if batch == True:
                     image_data = (image, file_path, str_parameters)
                     images.append(image_data)
-                    
+
                 settings.stats_count(1)
 
                 # increment seed for view when using batch
@@ -651,7 +651,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             content = f'> for {queue_object.ctx.author.name}'
             noun_descriptor = "drawing" if image_count == 1 else f'{image_count} drawings'
             draw_time = '{0:.3f}'.format(end_time - start_time)
-            message = f'my {noun_descriptor} of ``{queue_object.simple_prompt}`` with ``{queue_object.data_model}``  took me ``{draw_time}`` seconds!'
+            model_name = queue_object.data_model.split('.safetensors')[0]
+            message = f'my {noun_descriptor} of ``{queue_object.simple_prompt}`` with ``{model_name}`` took me ``{draw_time}`` seconds!'
 
             view = queue_object.view
 

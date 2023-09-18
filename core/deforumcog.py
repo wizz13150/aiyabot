@@ -328,19 +328,18 @@ class DeforumCog(commands.Cog):
         if len(path) > 0:
             print('Animation made.')
             anim_file = self.find_animation(os.path.abspath(path))
-            await ctx.send(file=discord.File(anim_file))
+            await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(anim_file))
             settings_file = self.find_settings(os.path.abspath(path))
-            result_seed = -2
-            try:
-                with open(settings_file, 'r', encoding='utf-8') as sttn:
-                    result_settings = json.loads(sttn.read())
-                result_seed = result_settings['seed']
-            except:
-                ...
-            await ctx.send(file=discord.File(settings_file)) # feature for selected users?
-            await ctx.respond((f'<@{ctx.author.id}> Your animation is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
+            #result_seed = -1
+            #try:
+            #    with open(settings_file, 'r', encoding='utf-8') as sttn:
+            #        result_settings = json.loads(sttn.read())
+            #    result_seed = result_settings['seed']
+            #except:
+            #    ...
+            #await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
+            #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
-
         else:
             await ctx.respond(f'<@{ctx.author.id}> Sorry, there was an error making the animation!')
  
