@@ -305,8 +305,12 @@ class DeforumCog(commands.Cog):
         non_default_params = {key: value for key, value in locals().items() if key in default_params and default_params[key] != value}
 
         # build the message to send if the options are not default
-        message = f'<@{ctx.author.id}> Making a Deforum animation...\n'
+        message = f'<@{ctx.author.id}> Making a Deforum animation...'
         if non_default_params:
+
+            message += f"\n**Prompts**: `{non_default_params['prompts']}`\n"
+            del non_default_params['prompts']
+
             params_list = list(non_default_params.items())
             for i in range(0, len(params_list), 3):
                 line_params = params_list[i:i+3]
