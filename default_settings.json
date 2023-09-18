@@ -1,5 +1,5 @@
 {
-    "W": 768,
+    "W": 832,
     "H": 1216,
     "show_info_on_ui": true,
     "tiling": false,
@@ -8,7 +8,7 @@
     "seed_resize_from_h": 0,
     "seed": -1,
     "sampler": "DPM++ 2M Karras",
-    "steps": 40,
+    "steps": 25,
     "batch_name": "DeforumBot_{timestring}",
     "seed_behavior": "iter",
     "seed_iter_N": 1,
