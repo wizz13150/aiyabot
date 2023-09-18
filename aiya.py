@@ -27,7 +27,6 @@ self.load_extension('core.upscalecog')
 self.load_extension('core.identifycog')
 self.load_extension('core.infocog')
 self.load_extension('core.generatecog')
-self.load_extension('core.metacog')
 self.load_extension('core.leaderboardcog')
 
 # stats slash command
