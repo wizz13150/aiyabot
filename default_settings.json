@@ -239,8 +239,8 @@
     "make_gif": false,
     "delete_imgs": false,
     "delete_input_frames": false,
-    "add_soundtrack": "File",
-    "soundtrack_path": "C:\\Users\\wizz\\Desktop\\DJPone-DansleCLub_cut1.22min.mp3",
+    "add_soundtrack": "None",
+    "soundtrack_path": "",
     "r_upscale_video": false,
     "r_upscale_factor": "x2",
     "r_upscale_model": "realesr-animevideov3",
@@ -251,8 +251,5 @@
     "frame_interpolation_slow_mo_enabled": false,
     "frame_interpolation_slow_mo_amount": 2,
     "frame_interpolation_keep_imgs": false,
-    "frame_interpolation_use_upscaled": false,
-    "sd_model_name": "zavychromaxl_v12.safetensors",
-    "sd_model_hash": "37e6db4fce",
-    "deforum_git_commit_id": "ff0680bb"
+    "frame_interpolation_use_upscaled": false
 }
