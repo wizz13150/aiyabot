@@ -50,9 +50,7 @@ class DeforumView(View):
 class DeforumCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Load the existing configuration or create a new one if it doesn't exist
         self.config = self.load_or_create_config('deforum.json')
-
 
     def load_or_create_config(self, filename):
         """Load the existing configuration or create a new one if it doesn't exist."""
@@ -83,7 +81,7 @@ class DeforumCog(commands.Cog):
         async def wrapper(*args, **kwargs):
             return await asyncio.to_thread(func, *args, **kwargs)
         return wrapper
- 
+
     async def make_animation(self, deforum_settings):
         try:
             url = f"{self.config['URL']}/batches"
@@ -177,25 +175,25 @@ class DeforumCog(commands.Cog):
             traceback.print_exc()
             raise RuntimeError('Key Frame string not correctly formatted')
         return frames
- 
+
     def find_animation(self, d):
         for f in os.listdir(d):
             if f.endswith('.mp4'):
                 return os.path.join(d, f)
         return ''
- 
+
     def find_settings(self, d):
         for f in os.listdir(d):
             if f.endswith('.txt'):
                 return os.path.join(d, f)
         return ''
- 
+
     def wrap_value(self, val:str):
         val = val.strip()
         if len(val) > 0 and not '(' in val and not ')' in val:
             val = f'0:({val})'
         return val
-    
+
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
     @option('prompts', str, description='The prompts to generate the animation.', required=True)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
@@ -250,7 +248,7 @@ class DeforumCog(commands.Cog):
     ):
         print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
-        # Construct a dic for the default parameters to compare
+        # construct a dic for the default parameters to compare
         default_params = {
             "prompts": "",
             "cadence": 6,
@@ -273,10 +271,11 @@ class DeforumCog(commands.Cog):
             "cfg_scale_schedule": "0:(7)",
             "antiblur_amount_schedule": "0:(0.1)",
             "frame_interpolation_engine": "None",
+            #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": ""
         }
 
-        # mApping dic for display names 
+        # mapping dic for display names 
         key_mapping = {
             "prompts":  "Prompts",
             "cadence": "Cadence",
@@ -298,12 +297,12 @@ class DeforumCog(commands.Cog):
             "strength_schedule": "Strength Schedule",
             "cfg_scale_schedule": "CFG Scale Schedule",
             "antiblur_amount_schedule": "Antiblur Amount Schedule",
-            #"add_soundtrack": discord.Attachment = None,
             "frame_interpolation_engine": "Frame Interpolation Engine",
+            #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": "Parseq Manifest"
         }
-        
-        # Load the default settings from the file
+
+        # load the default settings from the file
         with open('default_settings.json', 'r') as settings_file:
             deforum_settings = json.load(settings_file)
 
@@ -313,12 +312,12 @@ class DeforumCog(commands.Cog):
         if max_frames / cadence > self.config['true_frames_limit']:
             await ctx.respond(f"<@{ctx.author.id}> With Cadence {cadence} the length of the animation is limited by {cadence * self.config['true_frames_limit']} frames")
             return
-        
+
         #if add_soundtrack:
             # Now you can download or process the add_soundtrack as needed
             #mp3_file = await add_soundtrack.to_file()
             # Process the mp3_file...
-        
+
         # construct deforum_settings
         # add wrapped values to deforum_settings
         deforum_settings['translation_x'] = self.wrap_value(translation_x)        
@@ -336,7 +335,7 @@ class DeforumCog(commands.Cog):
 
         # addfixed params to deforum_settings
         deforum_settings['sampler'] = "DPM++ 2M Karras"
-        deforum_settings['motion_preview_mode'] = False # changed to fixeds for now
+        deforum_settings['motion_preview_mode'] = False # fixed for now
         deforum_settings['animation_mode'] = "3D"
         deforum_settings['border'] = "wrap"
         deforum_settings['padding_mode'] = "reflection"
@@ -361,11 +360,27 @@ class DeforumCog(commands.Cog):
         except Exception as e:
             await ctx.respond(f'<@{ctx.author.id}> Error parsing prompts!')
             return
-        deforum_settings["Prompts"] = prompts 
+        deforum_settings["prompts"] = prompts 
 
-        # compare parameters to default
+        # set up tuple of parameters to pass into the Discord view
+        input_tuple = (ctx, deforum_settings)
+        view = viewhandler.DeleteView(input_tuple)
+
+        # set up the queue if an image was found
+        user_queue_limit = settings.queue_check(ctx.author)
+
+        if queuehandler.GlobalQueue.dream_thread.is_alive():
+            if user_queue_limit == "Stop":
+                await ctx.send_response(content=f"Please wait! You're past your queue limit of {settings.global_var.queue_limit}.", ephemeral=True)
+            else:
+                queuehandler.GlobalQueue.queue.append(queuehandler.DeforumObject(self, *input_tuple, view))
+        else:
+            await queuehandler.process_dream(self, queuehandler.DeforumObject(self, *input_tuple, view))
+
+        # function to compare parameters to default using the key_mapping dic
         def get_display_name(internal_key):
             return key_mapping.get(internal_key, internal_key)
+
         non_default_params = {get_display_name(key): value for key, value in locals().items() if key in default_params and default_params[key] != value}
 
         # build the message to send if the options are not default
@@ -373,7 +388,6 @@ class DeforumCog(commands.Cog):
         if non_default_params:
             message += f" - `{non_default_params['Prompts']}`\n"
             del non_default_params['Prompts']
-
             params_list = list(non_default_params.items())
             for i in range(0, len(params_list), 3):
                 line_params = params_list[i:i+3]
@@ -382,22 +396,9 @@ class DeforumCog(commands.Cog):
                 message += "\n"
             if parseq_manifest != "":
                 message += f"**Parseq Manifest**: `Yes`\n"
-        
-        # set up tuple of parameters to pass into the Discord view
-        input_tuple = (ctx, deforum_settings)
-        view = viewhandler.DeleteView(input_tuple)
-        # set up the queue if an image was found
-        user_queue_limit = settings.queue_check(ctx.author)
-        if queuehandler.GlobalQueue.dream_thread.is_alive():
-            if user_queue_limit == "Stop":
-                await ctx.send_response(content=f"Please wait! You're past your queue limit of {settings.global_var.queue_limit}.", ephemeral=True)
-            else:
-                queuehandler.GlobalQueue.queue.append(queuehandler.DeforumObject(self, *input_tuple, view))
-        else:
-            await queuehandler.process_dream(self, queuehandler.DeforumObject(self, *input_tuple, view))
+
         if user_queue_limit != "Stop":
             await ctx.respond(message)
-
 
     # the function to queue Discord posts
     def post(self, event_loop: AbstractEventLoop, post_queue_object: queuehandler.PostObject):
@@ -416,7 +417,7 @@ class DeforumCog(commands.Cog):
 
             # Start progression message
             run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
-            
+
             # run generation
             future = run_coroutine_threadsafe(self.make_animation(deforum_settings), event_loop)
             path = future.result()
@@ -431,7 +432,6 @@ class DeforumCog(commands.Cog):
 
         # progression flag, job done
         queue_object.is_done = True
-        
 
     # post to discord
     async def post_dream(self, ctx, queue_object, path):
@@ -450,15 +450,15 @@ class DeforumCog(commands.Cog):
 
             # create view
             view = DeforumView(ctx, None, queue_object)
-            
+
             message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
             #message = await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
             view.message = message
 
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
         else:
-            await queue_object.ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')
-        
+            await ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')
+
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
 

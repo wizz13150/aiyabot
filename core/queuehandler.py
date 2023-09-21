@@ -37,8 +37,8 @@ class DrawObject:
         self.view = view
         self.is_done = False
 
-    def get_prompt(self):
-        return self.prompt
+    #def get_prompt(self):
+    #    return self.prompt
 
 
 # the queue object for Deforum command
@@ -50,8 +50,8 @@ class DeforumObject:
         self.view = view
         self.is_done = False
 
-    def get_prompt(self):
-        return self.deforum_settings["Prompts"]
+    #def get_prompt(self):
+    #    return self.deforum_settings["Prompts"]
 
 
 # the queue object for extras - upscale
@@ -92,7 +92,7 @@ class GenerateObject:
         self.temperature = temperature
         self.top_k = top_k
         self.repetition_penalty = repetition_penalty
-       
+
 
 # the queue object for posting to Discord
 class PostObject:
@@ -110,21 +110,21 @@ class GlobalQueue:
     dream_thread = Thread()
     post_event_loop = asyncio.get_event_loop()
     queue: list[DrawObject | UpscaleObject | IdentifyObject| DeforumObject] = []
-    
+
     # new generate Queue
     generate_queue: list[GenerateObject] = []
     generate_thread = Thread()
-    
+
     post_thread = Thread()
     event_loop = asyncio.get_event_loop()
     post_queue: list[PostObject] = []
-    
+
     def get_queue_sizes():
         return {
             "General Queue": len(GlobalQueue.queue),
             "/Generate Queue": len(GlobalQueue.generate_queue)
         }
-    
+
     @staticmethod
     def create_progress_bar(progress, total_batches=1, length=20, empty_char='□', filled_char='■', batch_char='▨', filled_batch_char='▣'):
         filled_length = int(length * progress // 100)
@@ -183,13 +183,14 @@ class GlobalQueue:
 
                     progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
                     eta_relative = round(data["eta_relative"])
-                    prompt = queue_object.get_prompt()
-                    short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt                    
+                    #prompt = queue_object.get_prompt()s
+                    #short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
+                    short_prompt = queue_object.prompt[:125] + "..." if len(prompt) > 125 else prompt
                     sampling_step = data['state']['sampling_step']
                     sampling_steps = data['state']['sampling_steps']
                     queue_size = len(GlobalQueue.queue)
 
-                    # adjust job output
+                    # adjust job output to the running task
                     if job == "scripts_txt2img":
                         job = "Batch 1 out of 1"
                     elif job.startswith("task"):
