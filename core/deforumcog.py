@@ -1,14 +1,50 @@
 import os, traceback
 import asyncio
+from asyncio import AbstractEventLoop
+from asyncio import run_coroutine_threadsafe
 import aiohttp
 import discord
-from discord.ext import commands
 from discord import option
+from discord.ext import commands
+from discord.ui import Button, View
 import typing, functools
 from typing import Optional
 import json
 import random
 import re
+
+from core import settings
+from core import queuehandler
+from core import viewhandler
+from core.queuehandler import GlobalQueue
+
+
+class DeleteButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(
+            label="Delete",
+            custom_id="delete",
+            emoji="❌")
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        try:
+            await interaction.message.delete()
+        except Exception as e:
+            print(f'The delete button broke: {str(e)}')
+            self.disabled = True
+            await interaction.response.edit_message(view=self.parent_view)
+            await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
+
+
+class DeforumView(View):
+    def __init__(self, ctx, message, queue_object):
+        super().__init__(timeout=None)
+        self.ctx = ctx
+        self.message = message
+        self.deforum_settings = queue_object.deforum_settings
+
+        self.add_item(DeleteButton(self))
 
 
 class DeforumCog(commands.Cog):
@@ -16,6 +52,7 @@ class DeforumCog(commands.Cog):
         self.bot = bot
         # Load the existing configuration or create a new one if it doesn't exist
         self.config = self.load_or_create_config('deforum.json')
+
 
     def load_or_create_config(self, filename):
         """Load the existing configuration or create a new one if it doesn't exist."""
@@ -98,7 +135,7 @@ class DeforumCog(commands.Cog):
 
     async def check_job_status(self, session, job_id):
         job_status_url = f"{self.config['URL']}/jobs"
-        max_retries = 5
+        max_retries = 10
         retries = 0
         while retries < max_retries:
             try:
@@ -108,13 +145,13 @@ class DeforumCog(commands.Cog):
                         status = data[job_id]['status']
                         return status
                     else:
-                        print(f"Job {job_id} not found. Retrying in 5 seconds...")
-                        await asyncio.sleep(5)
+                        print(f"Job {job_id} not found. Retrying in 2 seconds...")
+                        await asyncio.sleep(2)
                         retries += 1
 
             except aiohttp.client_exceptions.ClientOSError:
-                print("Network error encountered. Retrying in 5 seconds...")
-                await asyncio.sleep(5)
+                print("Network error encountered. Retrying in2 seconds...")
+                await asyncio.sleep(2)
                 retries += 1
 
         print(f"Failed to get job status after {max_retries} attempts.")
@@ -160,19 +197,19 @@ class DeforumCog(commands.Cog):
         return val
     
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
-    @option('prompts', str, description='The text for the animation.', required=True)
+    @option('prompts', str, description='The prompts to generate the animation.', required=True)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
     @option('steps', int, description='The steps for the animation. (default=25)', required=False, default=25)
     @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
-    @option('translation_x', str, description='The X translation for the animation. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('translation_y', str, description='The Y translation for the animation.(default="0:(0)"))', required=False, default="0:(0)")
-    @option('translation_z', str, description='The Z translation (zoom) for the animation. (default="0:(1.5)"))', required=False, default="0:(1.5)")
-    @option('rotation_3d_x', str, description='The 3D X rotation (around horizontal axe) for the animation. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('rotation_3d_y', str, description='The 3D Y rotation (around vertical axe)for the animation. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('rotation_3d_z', str, description='The 3D Z rotation (angle rotation) for the animation. (default="0:(0)"))', required=False, default="0:(0)")
+    @option('translation_x', str, description='The X translation to move the canvas left/right in pixels per frame. (default="0:(0)"))', required=False, default="0:(0)")
+    @option('translation_y', str, description='The Y translation to move the canvas up/down in pixels per frame.(default="0:(0)"))', required=False, default="0:(0)")
+    @option('translation_z', str, description='The Z translation to move the canvas towards/away from view [speed based on fov].(default="0:(1)"))', required=False, default="0:(1)")
+    @option('rotation_3d_x', str, description='The 3D X rotation to tilt the canvas up/down in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
+    @option('rotation_3d_y', str, description='The 3D Y rotation to pan the canvas left/right in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
+    @option('rotation_3d_z', str, description='The 3D Z rotation to roll the canvas clockwise/ anticlockwise. (default="0:(0)"))', required=False, default="0:(0)")
     @option('width', int, description='The width for the animation. (default=832))', required=False, default=832)
     @option('height', int, description='The height for the animation. (default=1216))', required=False, default=1216)
-    @option('fps', int, description='The fps for the animation. (default=15))', required=False, default=15)
+    @option('fps', int, description='The FPS for the animation. (default=15))', required=False, default=15)
     @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(120)"))', required=False, default="0:(120)")
     @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0.065)"))', required=False, default="0:(0.065)")
@@ -181,7 +218,7 @@ class DeforumCog(commands.Cog):
     @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(7)"))', required=False, default="0:(7)")
     @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.1)"))', required=False, default="0:(0.1)")
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
-    @option('frame_interpolation_engine', str, description='Frame interpolation engine option (default="None", x3)', required=False, default="None", choices=["None", "FILM"])
+    @option('frame_interpolation_engine', str, description='Enable the frame interpolation engine. Triples video generation time. (default="None", x3 FPS)', required=False, default="None", choices=["None", "FILM"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
 
     async def deforum_handler(
@@ -191,10 +228,9 @@ class DeforumCog(commands.Cog):
         cadence: Optional[int] = 5,
         steps: Optional[int] = 25,
         seed: Optional[int] = -1,
-        #strength: Optional[str] = "0:(0.65)",
         translation_x: Optional[str] = "0:(0)",
         translation_y: Optional[str] = "0:(0)",
-        translation_z: Optional[str] = "0:(1.5)",
+        translation_z: Optional[str] = "0:(1)",
         rotation_3d_x: Optional[str] = "0:(0)",
         rotation_3d_y: Optional[str] = "0:(0)",
         rotation_3d_z: Optional[str] = "0:(0)",
@@ -220,10 +256,9 @@ class DeforumCog(commands.Cog):
             "cadence": 6,
             "steps": 30,
             "seed": "",
-            "strength": "0:(0.65)",
             "translation_x": "0:(0)",
             "translation_y": "0:(0)",
-            "translation_z": "0:(1.5)",
+            "translation_z": "0:(1)",
             "rotation_3d_x": "0:(0)",
             "rotation_3d_y": "0:(0)",
             "rotation_3d_z": "0:(0)",
@@ -239,6 +274,33 @@ class DeforumCog(commands.Cog):
             "antiblur_amount_schedule": "0:(0.1)",
             "frame_interpolation_engine": "None",
             "parseq_manifest": ""
+        }
+
+        # mApping dic for display names 
+        key_mapping = {
+            "prompts":  "Prompts",
+            "cadence": "Cadence",
+            "steps": "Steps",
+            "seed": "Seed",
+            "translation_x": "Translation X",
+            "translation_y": "Translation Y",
+            "translation_z": "Translation Z",
+            "rotation_3d_x": "Rotation X",
+            "rotation_3d_y": "Rotation Y",
+            "rotation_3d_z": "Rotation Z",
+            "width": "Width",
+            "height": "Height",
+            "fps": "FPS",
+            "max_frames": "Total Frames",
+            "fov_schedule": "FOV Schedule",
+            "noise_schedule": "Noise Schedule",
+            "noise_multiplier_schedule": "Noise Multiplier Schedule",
+            "strength_schedule": "Strength Schedule",
+            "cfg_scale_schedule": "CFG Scale Schedule",
+            "antiblur_amount_schedule": "Antiblur Amount Schedule",
+            #"add_soundtrack": discord.Attachment = None,
+            "frame_interpolation_engine": "Frame Interpolation Engine",
+            "parseq_manifest": "Parseq Manifest"
         }
         
         # Load the default settings from the file
@@ -285,6 +347,7 @@ class DeforumCog(commands.Cog):
         deforum_settings['W'] = width
         deforum_settings['H'] = height
         deforum_settings['fps'] = fps
+
         # randomize the seed if still -1, 10 digits
         if seed == -1:
             seed = random.randint(1000000000, 9999999999)
@@ -293,56 +356,113 @@ class DeforumCog(commands.Cog):
         deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
         deforum_settings['parseq_manifest'] = parseq_manifest
 
-        #print('Parsing prompts')
         try:
             prompts = self.parse_prompts(prompts)
         except Exception as e:
             await ctx.respond(f'<@{ctx.author.id}> Error parsing prompts!')
             return
-        deforum_settings["prompts"] = prompts 
+        deforum_settings["Prompts"] = prompts 
 
         # compare parameters to default
-        non_default_params = {key: value for key, value in locals().items() if key in default_params and default_params[key] != value}
+        def get_display_name(internal_key):
+            return key_mapping.get(internal_key, internal_key)
+        non_default_params = {get_display_name(key): value for key, value in locals().items() if key in default_params and default_params[key] != value}
 
         # build the message to send if the options are not default
-        message = f'<@{ctx.author.id}> Making a Deforum animation...'
+        message = f'<@{ctx.author.id}>, {settings.messages_deforum()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}``'
         if non_default_params:
-
-            message += f"\n**Prompts**: `{non_default_params['prompts']}`\n"
-            del non_default_params['prompts']
+            message += f" - `{non_default_params['Prompts']}`\n"
+            del non_default_params['Prompts']
 
             params_list = list(non_default_params.items())
             for i in range(0, len(params_list), 3):
                 line_params = params_list[i:i+3]
                 for key, value in line_params:
-                    message += f"**{key}**: `{value}`  "
+                    message += f"{key}: `{value}`  "
                 message += "\n"
             if parseq_manifest != "":
                 message += f"**Parseq Manifest**: `Yes`\n"
+        
+        # set up tuple of parameters to pass into the Discord view
+        input_tuple = (ctx, deforum_settings)
+        view = viewhandler.DeleteView(input_tuple)
+        # set up the queue if an image was found
+        user_queue_limit = settings.queue_check(ctx.author)
+        if queuehandler.GlobalQueue.dream_thread.is_alive():
+            if user_queue_limit == "Stop":
+                await ctx.send_response(content=f"Please wait! You're past your queue limit of {settings.global_var.queue_limit}.", ephemeral=True)
+            else:
+                queuehandler.GlobalQueue.queue.append(queuehandler.DeforumObject(self, *input_tuple, view))
+        else:
+            await queuehandler.process_dream(self, queuehandler.DeforumObject(self, *input_tuple, view))
+        if user_queue_limit != "Stop":
+            await ctx.respond(message)
 
-        await ctx.respond(message)
 
-        print('Making a Deforum animation...')
-        path = await self.make_animation(deforum_settings)
+    # the function to queue Discord posts
+    def post(self, event_loop: AbstractEventLoop, post_queue_object: queuehandler.PostObject):
+        event_loop.create_task(
+            post_queue_object.ctx.channel.send(
+                content=post_queue_object.content,
+                embed=post_queue_object.embed,
+                view=None
+            )
+        )
+
+    def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.DeforumObject):
+        try:
+            print('Making a Deforum animation...')
+            deforum_settings = queue_object.deforum_settings
+
+            # Start progression message
+            run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
+            
+            # run generation
+            future = run_coroutine_threadsafe(self.make_animation(deforum_settings), event_loop)
+            path = future.result()
+            queue_object.deforum_settings = deforum_settings
+
+            # Schedule the task to create the view and send the message
+            event_loop.create_task(self.post_dream(queue_object.ctx, queue_object, path))
+
+        except Exception as e:
+            embed = discord.Embed(title='Generation failed', description=f'{e}\n{traceback.print_exc()}', color=0x00ff00)
+            event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+
+        # progression flag, job done
+        queue_object.is_done = True
+        
+
+    # post to discord
+    async def post_dream(self, ctx, queue_object, path):
 
         if len(path) > 0:
             print('Animation made.')
             anim_file = self.find_animation(os.path.abspath(path))
-            await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(anim_file))
             settings_file = self.find_settings(os.path.abspath(path))
-            #result_seed = -1
-            #try:
-            #    with open(settings_file, 'r', encoding='utf-8') as sttn:
-            #        result_settings = json.loads(sttn.read())
-            #    result_seed = result_settings['seed']
-            #except:
-            #    ...
-            #await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
-            #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
+            result_seed = -1
+            try:
+                with open(settings_file, 'r', encoding='utf-8') as sttn:
+                    result_settings = json.loads(sttn.read())
+                result_seed = result_settings['seed']
+            except:
+                ...
+
+            # create view
+            view = DeforumView(ctx, None, queue_object)
+            
+            message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
+            #message = await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
+            view.message = message
+
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
         else:
-            await ctx.respond(f'<@{ctx.author.id}> Sorry, there was an error making the animation!')
- 
+            await queue_object.ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')
+        
+        # check each queue for any remaining tasks
+        GlobalQueue.process_queue()
+
+
 def setup(bot):
     bot.add_cog(DeforumCog(bot))
  

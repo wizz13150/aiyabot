@@ -37,6 +37,22 @@ class DrawObject:
         self.view = view
         self.is_done = False
 
+    def get_prompt(self):
+        return self.prompt
+
+
+# the queue object for Deforum command
+class DeforumObject:
+    def __init__(self, cog, ctx, deforum_settings, view):
+        self.cog = cog
+        self.ctx = ctx
+        self.deforum_settings = deforum_settings
+        self.view = view
+        self.is_done = False
+
+    def get_prompt(self):
+        return self.deforum_settings["Prompts"]
+
 
 # the queue object for extras - upscale
 class UpscaleObject:
@@ -53,7 +69,6 @@ class UpscaleObject:
         self.codeformer = codeformer
         self.upscale_first = upscale_first
         self.view = view
-        self.is_done = False
 
 
 # the queue object for identify (interrogate)
@@ -64,7 +79,6 @@ class IdentifyObject:
         self.init_image = init_image
         self.phrasing = phrasing
         self.view = view
-        self.is_done = False
 
 
 # the queue object for generate
@@ -78,7 +92,6 @@ class GenerateObject:
         self.temperature = temperature
         self.top_k = top_k
         self.repetition_penalty = repetition_penalty
-        self.is_done = False
        
 
 # the queue object for posting to Discord
@@ -96,7 +109,7 @@ class PostObject:
 class GlobalQueue:
     dream_thread = Thread()
     post_event_loop = asyncio.get_event_loop()
-    queue: list[DrawObject | UpscaleObject | IdentifyObject] = []
+    queue: list[DrawObject | UpscaleObject | IdentifyObject| DeforumObject] = []
     
     # new generate Queue
     generate_queue: list[GenerateObject] = []
@@ -170,7 +183,8 @@ class GlobalQueue:
 
                     progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
                     eta_relative = round(data["eta_relative"])
-                    short_prompt = queue_object.prompt[:125] + "..." if len(prompt) > 125 else prompt                    
+                    prompt = queue_object.get_prompt()
+                    short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt                    
                     sampling_step = data['state']['sampling_step']
                     sampling_steps = data['state']['sampling_steps']
                     queue_size = len(GlobalQueue.queue)
@@ -261,7 +275,7 @@ class GlobalQueue:
         '''
 
 
-async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject):
+async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
     GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
     GlobalQueue.dream_thread.start()
 

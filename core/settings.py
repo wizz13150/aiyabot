@@ -91,9 +91,13 @@ class GlobalVar:
     url = ""
     dir = ""
     wait_message = []
-    wait_message_count = 0
     wait_message_prompt = []
+    wait_message_deforum = []
+    wait_message_deforum_end = []
+    wait_message_count = 0
     wait_message_prompt_count = 0
+    wait_message_deforum_count = 0
+    wait_message_deforum_count_end = 0
     embed_color = discord.Colour.from_rgb(222, 89, 28)
     gradio_auth = None
     username: Optional[str] = None
@@ -237,6 +241,16 @@ def messages():
 def messages_prompt():
     random_message_prompt = global_var.wait_message_prompt[random.randint(0, global_var.wait_message_prompt_count)]
     return random_message_prompt
+
+
+def messages_deforum():
+    random_message_deforum = global_var.wait_message_deforum[random.randint(0, global_var.wait_message_deforum_count)]
+    return random_message_deforum
+
+
+def messages_deforum_end():
+    random_message_deforum_end = global_var.wait_message_deforum_end[random.randint(0, global_var.wait_message_deforum_end_count)]
+    return random_message_deforum_end
 
 
 def check(channel_id):
@@ -445,6 +459,18 @@ def files_check():
         for row in message_prompt_data:
             global_var.wait_message_prompt.append(row[0])
     global_var.wait_message_prompt_count = len(global_var.wait_message_prompt) - 1
+
+    with open(f'{path}messages_deforum.csv', encoding='UTF-8') as csv_file:
+        message_deforum_data = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_deforum_data:
+            global_var.wait_message_deforum.append(row[0])
+    global_var.wait_message_deforum_count = len(global_var.wait_message_deforum) - 1
+
+    with open(f'{path}messages_deforum_end.csv', encoding='UTF-8') as csv_file:
+        message_deforum_data_end = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_deforum_data_end:
+            global_var.wait_message_deforum_end.append(row[0])
+    global_var.wait_message_deforum_end_count = len(global_var.wait_message_deforum_end) - 1
 
     # creating files if they don't exist
     if os.path.isfile(f'{path}stats.txt'):
