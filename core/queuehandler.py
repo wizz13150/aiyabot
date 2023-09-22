@@ -183,7 +183,7 @@ class GlobalQueue:
 
                     progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
                     eta_relative = round(data["eta_relative"])
-                    #prompt = queue_object.get_prompt()s
+                    #prompt = queue_object.get_prompt()
                     #short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
                     short_prompt = queue_object.prompt[:125] + "..." if len(prompt) > 125 else prompt
                     sampling_step = data['state']['sampling_step']

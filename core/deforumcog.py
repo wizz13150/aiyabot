@@ -102,7 +102,7 @@ class DeforumCog(commands.Cog):
                         print(f"Received job_id: {job_id}")
                         
                         # Wait for a short duration before checking the job status
-                        await asyncio.sleep(10)
+                        await asyncio.sleep(5)
 
                         while True:
                             # Check the job status
@@ -260,7 +260,7 @@ class DeforumCog(commands.Cog):
             "rotation_3d_x": "0:(0)",
             "rotation_3d_y": "0:(0)",
             "rotation_3d_z": "0:(0)",
-            "width": 768,
+            "width": 832,
             "height": 1216,
             "fps": 15,
             "max_frames": 120,
@@ -411,17 +411,18 @@ class DeforumCog(commands.Cog):
         )
 
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.DeforumObject):
+
+        # Start progression message
+        #srun_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
+
         try:
             print('Making a Deforum animation...')
             deforum_settings = queue_object.deforum_settings
 
-            # Start progression message
-            run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
-
             # run generation
             future = run_coroutine_threadsafe(self.make_animation(deforum_settings), event_loop)
             path = future.result()
-            queue_object.deforum_settings = deforum_settings
+            #queue_object.deforum_settings = deforum_settings
 
             # Schedule the task to create the view and send the message
             event_loop.create_task(self.post_dream(queue_object.ctx, queue_object, path))
@@ -431,7 +432,12 @@ class DeforumCog(commands.Cog):
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
 
         # progression flag, job done
-        queue_object.is_done = True
+        #queue_object.is_done = True
+
+        # check queue for any remaining tasks
+        if queuehandler.GlobalQueue.queue:
+            event_loop.create_task(queuehandler.process_dream(self, queuehandler.GlobalQueue.queue.pop(0)))
+
 
     # post to discord
     async def post_dream(self, ctx, queue_object, path):
