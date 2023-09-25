@@ -101,16 +101,16 @@ class YumeButton(Button):
 
 class FaceDetailerButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Face Details", custom_id="face_detailer", emoji="🎭", style=1)
+        super().__init__(label="Face Details", custom_id="adetailer", emoji="🎭", style=1)
         self.parent_view = parent_view
 
     async def callback(self, interaction):
         if self.style == 1:  # Default color
             self.style = 3  # Set this button to green
-            self.parent_view.face_detailer = True
+            self.parent_view.adetailer = "Faces"
         else:
             self.style = 1  # Set the button to default color
-            self.parent_view.face_detailer = None
+            self.parent_view.adetailer = None
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -156,7 +156,7 @@ class PromptButton(Button):
             model_choice = self.parent_view.selected_model
 
             # adetailer user choice
-            face_detailer_choice = self.parent_view.face_detailer
+            adetailer_choice = self.parent_view.adetailer
 
             # batch user choice
             batch_choice = str(self.parent_view.batch_value)
@@ -165,7 +165,7 @@ class PromptButton(Button):
             prompt = self.parent_view.prompts[prompt_index]
             self.parent_view.ctx.called_from_button = True
             await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt, size_ratio=size_ratio, 
-                                          data_model=model_choice, facedetail=face_detailer_choice,
+                                          data_model=model_choice, adetailer=adetailer_choice,
                                           batch=batch_choice)
             await interaction.edit_original_response(view=self.parent_view)
         except Exception as e:
@@ -256,7 +256,7 @@ class GenerateView(View):
         self.selected_orientation = "Portrait"
         self.selected_size = "Medium"
         self.selected_model = "ZavyChromaXL"
-        self.face_detailer = None
+        self.adetailer = None
         self.batch_value = 1
 
     async def interaction_check(self, interaction):
@@ -349,6 +349,29 @@ class GenerateCog(commands.Cog):
             await ctx.send_followup("The repetition penalty must not be zero.")
             return
         
+        default_values = {
+            'num_prompts': 1,
+            'max_length': 75,
+            'temperature': 0.9,
+            'top_k': 8,
+            'repetition_penalty': 1.2
+        }
+
+        current_values = {
+            'num_prompts': num_prompts,
+            'max_length': max_length,
+            'temperature': temperature,
+            'top_k': top_k,
+            'repetition_penalty': repetition_penalty
+        }
+
+        modified_args = [f"{key}: ``{value}``" for key, value in current_values.items() if value != default_values[key]]
+        if modified_args:
+            args_message = " - ".join(modified_args)
+            response_message = f"<@{ctx.author.id}>, {settings.messages_prompt()}\nQueue: ``{len(queuehandler.GlobalQueue.generate_queue)}`` - Your text: ``{prompt}``\n{args_message}"
+        else:
+            response_message = f"<@{ctx.author.id}>, {settings.messages_prompt()}\nQueue: ``{len(queuehandler.GlobalQueue.generate_queue)}`` - Your text: ``{prompt}``"
+
         # set up the queue
         if queuehandler.GlobalQueue.generate_thread.is_alive():
             queuehandler.GlobalQueue.generate_queue.append(queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
@@ -356,10 +379,10 @@ class GenerateCog(commands.Cog):
             await queuehandler.process_generate(self, queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
         
         if called_from_reroll:
-            await ctx.channel.send(f"<@{ctx.author.id}>, {settings.messages_prompt()}\nQueue: ``{len(queuehandler.GlobalQueue.generate_queue)}`` - Your text: ``{prompt}``\nNumber of prompts: ``{num_prompts}`` - Max length: ``{max_length}``")
+            await ctx.channel.send(response_message)
         else:
-            await ctx.send_response(f"<@{ctx.author.id}>, {settings.messages_prompt()}\nQueue: ``{len(queuehandler.GlobalQueue.generate_queue)}`` - Your text: ``{prompt}``\nNumber of prompts: ``{num_prompts}`` - Max length: ``{max_length}``")
-    
+            await ctx.send_response(response_message)
+
     def post(self, event_loop: AbstractEventLoop, post_queue_object: queuehandler.PostObject):
         event_loop.create_task(
             post_queue_object.ctx.channel.send(
