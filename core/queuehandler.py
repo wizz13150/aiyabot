@@ -1,7 +1,6 @@
 import aiohttp
 import asyncio
 import discord
-import random
 import re
 from threading import Thread
 
@@ -121,7 +120,6 @@ class GlobalQueue:
     def get_queue_sizes():
         output = {}
         # Ajout d'un espace réservé pour "Queue Sizes" pour qu'il agisse comme un titre.
-        output["Queue Sizes"] = ""
         output["General Queue Size"] = len(GlobalQueue.queue)
         output["Generate Queue Size"] = len(GlobalQueue.generate_queue)
 
@@ -234,10 +232,9 @@ class GlobalQueue:
                         progress_msg = await ctx.send(embed=embed)
 
                     # message update
-                    random_color = discord.Color.from_rgb(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
                     embed = discord.Embed(title=f"──── Running Job Progression ────", 
                                           description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
-                                          color=random_color)
+                                          color=discord.Color.random())
                     await progress_msg.edit(embed=embed)
 
                     await asyncio.sleep(1)
@@ -283,10 +280,9 @@ class GlobalQueue:
             LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
 
             # update progress message
-            random_color = discord.Color.from_rgb(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
             description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
             description += f"\nCurrently on prompt {i+1} of {num_prompts}."
-            embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=random_color)
+            embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
             await progress_msg.edit(embed=embed)
 
         # check if the message has been moved in the chat and move it down if needed

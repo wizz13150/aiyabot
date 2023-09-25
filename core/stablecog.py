@@ -475,7 +475,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             alwayson_scripts_settings = {}
             
             # add adetailer settings
-            if queue_object.adetailer is not None:
+            if queue_object.adetailer and queue_object.adetailer != "None":
                 model_mappings = {
                     "Faces": {
                         "ad_model": "face_yolov8n.pt",

@@ -68,7 +68,7 @@ async def parse_image_info(ctx, image_url, command):
 
         # initialize extra params
         steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
-        style, adetailer, highres_fix, clip_skip = '', None, False, '', ''
+        style, adetailer, highres_fix, clip_skip = '', None, '', ''
         strength, poseref, has_init_url = '', '', False
         if command == 'button' and ctx is not None:
             has_init_url = True
@@ -200,6 +200,7 @@ async def parse_image_info(ctx, image_url, command):
 
         await ctx.respond(embed=embed, ephemeral=True)
     except Exception as e:
+        print(f"Erreur dans parse_image_info: {e}")
         if command == 'slash':
             message = "\nIf you're copying from Discord and think there should be image info," \
                       " try **Copy Link** instead of **Copy Image**"

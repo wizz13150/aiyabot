@@ -46,6 +46,13 @@ class DrawModal(Modal):
         super().__init__(title="Change Prompt!")
         self.input_tuple = input_tuple
 
+        # fix incremented seed in Edit when batch > 1
+        current_batch = input_tuple[13][0] * input_tuple[13][1]
+        if current_batch > 1:
+            original_seed = input_tuple[10] - current_batch
+        else:
+            original_seed = input_tuple[10]
+
         # run through mod function to get clean negative since I don't want to add it to stablecog tuple
         self.clean_negative = input_tuple[3]
         if settings.global_var.negative_prompt_prefix:
@@ -72,7 +79,7 @@ class DrawModal(Modal):
             InputText(
                 label='Keep seed? Delete to randomize',
                 style=discord.InputTextStyle.short,
-                value=input_tuple[10],
+                value=original_seed,
                 required=False
             )
         )
@@ -455,7 +462,8 @@ class DrawView(View):
         emoji="📋",
         label="Review")
     async def button_review(self, button, interaction):
-        # reuse "read image info" command from ctxmenuhandler
+        print("[DEBUG] Button review clicked.")
+
         init_url = None
         try:
             attachment = self.message.attachments[0]
@@ -464,8 +472,8 @@ class DrawView(View):
             embed = await ctxmenuhandler.parse_image_info(init_url, attachment.url, "button")
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
-            print('The clipboard button broke: ' + str(e))
-            # if interaction fails, assume it's because aiya restarted (breaks buttons)
+            print(f"[ERROR] The clipboard button broke: {str(e)}.")
+
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
@@ -485,7 +493,7 @@ class DrawView(View):
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
                                             "You can react with ❌ to delete the image.", ephemeral=True)
-            
+
 class DeleteView(View):
     def __init__(self, input_tuple):
         super().__init__(timeout=None)
@@ -507,7 +515,7 @@ class DeleteView(View):
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
                                             "You can react with ❌ to delete the image.", ephemeral=True)
-            
+
 class DownloadMenu(discord.ui.Select):
     def __init__(self, epoch_time, seed, batch_count, input_tuple):
         self.input_tuple = input_tuple
