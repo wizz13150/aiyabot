@@ -130,17 +130,11 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.extra_net_autocomplete),
     )
     @option(
-        'facefix',
+        'adetailer',
         str,
-        description='Tries to improve faces in images.',
+        description='Choose which details to improve: Faces, Hands, or both.',
         required=False,
-        choices=settings.global_var.facefix_models,
-    )
-    @option(
-        'facedetail',
-        bool,
-        description='Improves facial details for wider compositions.',
-        required=False,
+        choices=['Faces', 'Hands', 'Faces+Hands']
     )
     @option(
         'poseref',
@@ -196,8 +190,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             seed: Optional[int] = -1,
                             styles: Optional[str] = None,
                             extra_net: Optional[str] = None,
-                            facefix: Optional[str] = None,
-                            facedetail: Optional[bool] = None,
+                            adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,
@@ -225,10 +218,6 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             sampler = settings.read(channel)['sampler']
         if styles is None:
             styles = settings.read(channel)['style']
-        if facefix is None:
-            facefix = settings.read(channel)['facefix']
-        if facedetail is None:
-            facedetail = settings.read(channel)['facedetail']
         if highres_fix is None:
             highres_fix = settings.read(channel)['highres_fix']
         if clip_skip is None:
@@ -327,6 +316,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 reply_adds += f"\nStrength can't be ``{strength}``! Setting to default of `0.75`."
                 strength = 0.75
             reply_adds += f'\nURL Init Image: ``{init_image.url}``'
+        if adetailer is not None:
+            reply_adds += f'\nADetailer: ``{adetailer}``'
         # try to convert batch to usable format
         batch_check = settings.batch_format(batch)
         batch = list(batch_check)
@@ -362,10 +353,6 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             reply_adds += f'\nExtra network: ``{extra_net}``'
             if net_multi != 0.85:
                 reply_adds += f' (multiplier: ``{net_multi}``)'
-        if facefix != settings.read(channel)['facefix']:
-            reply_adds += f'\nFace restoration: ``{facefix}``'
-        if facedetail != settings.read(channel)['facedetail']:
-            reply_adds += f'\nFace detailer: ``{facedetail}``'
         if clip_skip != settings.read(channel)['clip_skip']:
             reply_adds += f'\nCLIP skip: ``{clip_skip}``'
         if poseref is not None:
@@ -376,7 +363,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         # set up tuple of parameters to pass into the Discord view
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
-            init_image, batch, styles, facefix, highres_fix, clip_skip, extra_net, epoch_time, facedetail, poseref)
+            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref)
         
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
@@ -484,28 +471,37 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             # add any options that would go into the override_settings
             override_settings = {"CLIP_stop_at_last_layers": queue_object.clip_skip}
-            if queue_object.facefix != 'None':
-                override_settings["face_restoration_model"] = queue_object.facefix
-                # face restoration needs this extra parameter
-                facefix_payload = {
-                    "restore_faces": True,
-                }
-                payload.update(facefix_payload)
 
-            # add facedetail settings
-            alwayson_scripts_settings = {
-                "ADetailer": {
-                    "args": [
-                        queue_object.facedetail,
-                        {
-                            "ad_model": "face_yolov8n.pt",
-                            "ad_use_inpaint_width_height": True,
-                            "ad_inpaint_width": 768,
-                            "ad_inpaint_height": 768,
-                        }
-                    ]
+            alwayson_scripts_settings = {}
+            
+            # add adetailer settings
+            if queue_object.adetailer is not None:
+                model_mappings = {
+                    "Faces": {
+                        "ad_model": "face_yolov8n.pt",
+                        "ad_use_inpaint_width_height": True,
+                        "ad_inpaint_width": 768,
+                        "ad_inpaint_height": 768,
+                    },
+                    "Hands": {
+                        "ad_model": "hand_yolov8n.pt",
+                        "ad_use_inpaint_width_height": True,
+                        "ad_inpaint_width": 768,
+                        "ad_inpaint_height": 768,
+                        "ad_use_noise_multiplier": True,
+                        "ad_noise_multiplier": 1.05,
+                    }
                 }
-            }
+                args = [True]
+                if queue_object.adetailer == "Faces+Hands":
+                    args.extend([model_mappings["Faces"], model_mappings["Hands"]])
+                else:
+                    args.append(model_mappings[queue_object.adetailer])
+                alwayson_scripts_settings = {
+                    "ADetailer": {
+                        "args": args
+                    }
+                }
 
             # add poseref settings
             if queue_object.poseref is not None:
@@ -711,8 +707,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         self, queue_object.ctx, content=content, file=file, embed='', view=view))
 
         except KeyError as e:
-            embed = discord.Embed(title='txt2img failed', description=f'An invalid parameter was found!\n{e}',
-                                  color=settings.global_var.embed_color)
+            embed = discord.Embed(title='txt2img failed', description=f'An invalid parameter was found!\nKey causing the error: {e}',
+                                color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
         except Exception as e:
             embed = discord.Embed(title='txt2img failed', description=f'{e}\n{traceback.print_exc()}',

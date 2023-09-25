@@ -149,13 +149,6 @@ class SettingsCog(commands.Cog):
         autocomplete=discord.utils.basic_autocomplete(lora_autocomplete),
     )
     @option(
-        'facefix',
-        str,
-        description='Tries to improve faces in images.',
-        required=False,
-        choices=settings.global_var.facefix_models,
-    )
-    @option(
         'highres_fix',
         str,
         description='Set default highres fix model for the channel',
@@ -173,12 +166,6 @@ class SettingsCog(commands.Cog):
         'strength',
         str,
         description='Set default strength (for init_img) for the channel (0.0 to 1.0).'
-    )
-    @option(
-        'facedetail',
-        bool,
-        description='Improves facial details for wider compositions.',
-        required=False,
     )
     @option(
         'batch',
@@ -217,8 +204,6 @@ class SettingsCog(commands.Cog):
                                styles: Optional[str] = None,
                                hypernet: Optional[str] = None,
                                lora: Optional[str] = None,
-                               facefix: Optional[str] = None,
-                               facedetail: Optional[bool] = None,
                                highres_fix: Optional[str] = None,
                                clip_skip: Optional[int] = None,
                                strength: Optional[str] = None,
@@ -265,7 +250,6 @@ class SettingsCog(commands.Cog):
         if refresh:
             settings.global_var.model_info.clear()
             settings.global_var.sampler_names.clear()
-            settings.global_var.facefix_models.clear()
             settings.global_var.style_names.clear()
             settings.global_var.embeddings_1.clear()
             settings.global_var.embeddings_2.clear()
@@ -327,16 +311,6 @@ class SettingsCog(commands.Cog):
         if styles is not None:
             settings.update(channel, 'style', styles)
             new += f'\nStyle: ``"{styles}"``'
-            set_new = True
-
-        if facefix is not None:
-            settings.update(channel, 'facefix', facefix)
-            new += f'\nFacefix: ``"{facefix}"``'
-            set_new = True
-
-        if facedetail is not None:
-            settings.update(channel, 'facedetail', facedetail)
-            new += f'\nFacedetail: ``"{facedetail}"``'
             set_new = True
 
         if highres_fix is not None:

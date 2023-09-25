@@ -28,17 +28,16 @@ input_tuple[0] = ctx
 [12] = init_image
 [13] = batch
 [14] = style
-[15] = facefix
-[16] = highres_fix
-[17] = clip_skip
-[18] = extra_net
-[19] = epoch_time
-[20] = facedetail
-[21] = poseref
+[15] = highres_fix
+[16] = clip_skip
+[17] = extra_net
+[18] = epoch_time
+[19] = adetailer
+[20] = poseref
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
-               'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles', 'facefix',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'facedetail', 'poseref']
+               'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref']
 
 
 # the modal that is used for the 🖋 button
@@ -88,7 +87,7 @@ class DrawModal(Modal):
         # expose each available (supported) option, even if output didn't use them
         ex_params = f'data_model:{display_name}'
         for index, value in enumerate(tuple_names[index_start:], index_start):
-            if index == 10 or 12 <= index <= 13 or index == 16:
+            if index == 10 or 12 <= index <= 13 or index == 15:
                 continue
             ex_params += f'\n{value}:{input_tuple[index]}'
 
@@ -124,9 +123,9 @@ class DrawModal(Modal):
         net_multi, new_net_multi = 0.85, 0
         embed_err = discord.Embed(title="I can't redraw this!", description="")
         # if extra network is used, find the multiplier
-        if pen[18]:
-            if pen[18] in pen[2]:
-                net_multi = re.search(f'{pen[18]}:(.*)>', pen[2]).group(1)
+        if pen[17]:
+            if pen[17] in pen[2]:
+                net_multi = re.search(f'{pen[17]}:(.*)>', pen[2]).group(1)
 
         if settings.global_var.size_range:
             max_size = settings.global_var.size_range
@@ -211,28 +210,19 @@ class DrawModal(Modal):
                     await interaction.response.send_message(embed=embed_err, ephemeral=True)
                     await infocog.InfoView.button_style(infocog_view, '', interaction)
                     return
-            if 'facefix:' in line:
-                if line.split(':', 1)[1] in settings.global_var.facefix_models:
-                    pen[15] = line.split(':', 1)[1]
+            if 'adetailer:' in line:
+                value = line.split(':', 1)[1].strip()
+                valid_choices = ['None', 'Faces', 'Hands', 'Faces+Hands']
+                if value in valid_choices:
+                    pen[19] = value
                 else:
                     invalid_input = True
-                    embed_err.add_field(name=f"`{line.split(':', 1)[1]}` can't fix faces! I have suggestions.",
-                                        value=', '.join(['`%s`' % x for x in settings.global_var.facefix_models]),
-                                        inline=False)
-            if 'facedetail:' in line:
-                value = line.split(':', 1)[1].replace(",", ".").strip()
-                if value.lower() == "true":
-                    pen[20] = True
-                elif value.lower() == "false":
-                    pen[20] = False
-                else:
-                    invalid_input = True
-                    embed_err.add_field(name=f"`{value}` is not valid for facedetail!.",
-                                        value='Make sure you enter a boolean (True or False).',
+                    embed_err.add_field(name=f"`{value}` is not valid for adetailer!",
+                                        value=f'Make sure you enter one of the following: `{", ".join(valid_choices)}`.',
                                         inline=False)
             if 'clip_skip:' in line:
                 try:
-                    pen[17] = [x for x in range(1, 14, 1) if x == int(line.split(':', 1)[1])][0]
+                    pen[16] = [x for x in range(1, 14, 1) if x == int(line.split(':', 1)[1])][0]
                 except(Exception,):
                     invalid_input = True
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is too much CLIP to skip!",
@@ -241,9 +231,9 @@ class DrawModal(Modal):
                 if line.count(':') == 2:
                     net_check = re.search(':(.*):', line).group(1)
                     if net_check in settings.global_var.extra_nets:
-                        pen[18] = line.split(':', 1)[1]
+                        pen[17] = line.split(':', 1)[1]
                 elif line.count(':') == 1 and line.split(':', 1)[1] in settings.global_var.extra_nets:
-                    pen[18] = line.split(':', 1)[1]
+                    pen[17] = line.split(':', 1)[1]
                 else:
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is an unknown extra network!",
                                         value="I used the info command for you! Please review the hypernets and LoRAs.")
@@ -273,8 +263,8 @@ class DrawModal(Modal):
             if model_found:
                 pen[2] = new_token + pen[1]
             # figure out what extra_net was used
-            if pen[18] != 'None':
-                pen[2], pen[18], new_net_multi = settings.extra_net_check(pen[2], pen[18], net_multi)
+            if pen[17] != 'None':
+                pen[2], pen[17], new_net_multi = settings.extra_net_check(pen[2], pen[17], net_multi)
             channel = '% s' % pen[0].channel.id
             pen[2] = settings.extra_net_defaults(pen[2], channel)
             # set batch to 1
@@ -293,15 +283,15 @@ class DrawModal(Modal):
                 prompt_output += f'\nNew model: ``{new_model}``'
             index_start = 5
             for index, value in enumerate(tuple_names[index_start:], index_start):
-                if index == 13 or index == 16 or index == 18:
+                if index == 13 or index == 15 or index == 17:
                     continue
                 if str(pen[index]) != str(self.input_tuple[index]):
                     prompt_output += f'\nNew {value}: ``{pen[index]}``'
-            if str(pen[18]) != 'None':
-                if str(pen[18]) != str(self.input_tuple[18]) and new_net_multi != net_multi or new_net_multi != net_multi:
-                    prompt_output += f'\nNew extra network: ``{pen[18]}`` (multiplier: ``{new_net_multi}``)'
-                elif str(pen[18]) != str(self.input_tuple[18]):
-                    prompt_output += f'\nNew extra network: ``{pen[18]}``'
+            if str(pen[17]) != 'None':
+                if str(pen[17]) != str(self.input_tuple[17]) and new_net_multi != net_multi or new_net_multi != net_multi:
+                    prompt_output += f'\nNew extra network: ``{pen[17]}`` (multiplier: ``{new_net_multi}``)'
+                elif str(pen[17]) != str(self.input_tuple[17]):
+                    prompt_output += f'\nNew extra network: ``{pen[17]}``'
 
             print(f'Redraw -- {interaction.user.name}#{interaction.user.discriminator} -- Prompt: {pen[1]}')
 
@@ -322,10 +312,10 @@ class DrawView(View):
             batch = input_tuple[13]
             batch_count = batch[0] * batch[1]
             if batch_count > 1:
-                download_menu = DownloadMenu(input_tuple[19], input_tuple[10], batch_count, input_tuple)
+                download_menu = DownloadMenu(input_tuple[18], input_tuple[10], batch_count, input_tuple)
                 download_menu.callback = download_menu.callback
                 self.add_item(download_menu)
-                upscale_menu = UpscaleMenu(input_tuple[19], input_tuple[10], batch_count, input_tuple)
+                upscale_menu = UpscaleMenu(input_tuple[18], input_tuple[10], batch_count, input_tuple)
                 upscale_menu.callback = upscale_menu.callback
                 self.add_item(upscale_menu)
 

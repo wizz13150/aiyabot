@@ -71,7 +71,6 @@ height = 1216
 guidance_scale = "8.0"
 sampler = "DPM++ 2M SDE Karras"
 style = "None"
-facefix = "None"
 highres_fix = "Disabled"
 clip_skip = 1
 hypernet = "None"
@@ -82,7 +81,6 @@ strength = "0.75"
 batch = "1,1"
 max_batch = "32,1"
 upscaler_1 = "ESRGAN_4x"
-facedetail = "False"
 """
 
 
@@ -110,7 +108,6 @@ class GlobalVar:
     size_range_exceed = None
     sampler_names = []
     style_names = {}
-    facefix_models = []
     embeddings_1 = []
     embeddings_2 = []
     hyper_names = []
@@ -287,7 +284,6 @@ def generate_template(template_pop, config):
     template_pop['guidance_scale'] = config['guidance_scale']
     template_pop['sampler'] = config['sampler']
     template_pop['style'] = config['style']
-    template_pop['facefix'] = config['facefix']
     template_pop['highres_fix'] = config['highres_fix']
     template_pop['clip_skip'] = config['clip_skip']
     template_pop['hypernet'] = config['hypernet']
@@ -298,7 +294,6 @@ def generate_template(template_pop, config):
     template_pop['batch'] = config['batch']
     template_pop['max_batch'] = config['max_batch']
     template_pop['upscaler_1'] = config['upscaler_1']
-    template_pop['facedetail'] = config['facedetail']
     return template_pop
 
 
@@ -570,8 +565,6 @@ def populate_global_vars():
     global_var.style_names['None'] = ''
     for s2 in r2.json():
         global_var.style_names[s2['name']] = s2['prompt'], s2['negative_prompt']
-    for s3 in r3.json():
-        global_var.facefix_models.append(s3['name'])
     for s4, shape in r4.json()['loaded'].items():
         if shape['shape'] == 768:
             global_var.embeddings_1.append(s4)
@@ -625,8 +618,6 @@ def populate_global_vars():
     except(Exception,):
         print("Trouble accessing Web UI config! I can't pull the LoRAs or High-res upscaler lists!")
     # format some global lists, ensure default "None" options exist
-    if 'None' not in global_var.facefix_models:
-        global_var.facefix_models.insert(0, 'None')
     if 'None' not in global_var.hyper_names:
         global_var.hyper_names.insert(0, 'None')
     if '' in global_var.lora_names:

@@ -68,7 +68,7 @@ async def parse_image_info(ctx, image_url, command):
 
         # initialize extra params
         steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
-        style, facefix, facedetail, highres_fix, clip_skip = '', '', False, '', ''
+        style, adetailer, highres_fix, clip_skip = '', None, False, '', ''
         strength, poseref, has_init_url = '', '', False
         if command == 'button' and ctx is not None:
             has_init_url = True
@@ -97,7 +97,6 @@ async def parse_image_info(ctx, image_url, command):
                 model_hash = line.split(': ', 1)[1]
             if 'Model: ' in line:
                 model_name = line.split(': ', 1)[1]
-
             if 'Steps: ' in line:
                 steps = line.split(': ', 1)[1]
             if 'Size: ' in line:
@@ -108,18 +107,14 @@ async def parse_image_info(ctx, image_url, command):
                 sampler = line.split(': ', 1)[1]
             if 'Seed: ' in line:
                 seed = line.split(': ', 1)[1]
-
-            if 'Face restoration: ' in line:
-                facefix = line.split(': ', 1)[1]
-            if 'Face detailer: ' in line:
-                facedetail = line.split(': ', 1)[1]
+            if 'ADetailer: ' in line:
+                adetailer = line.split(': ', 1)[1]
             if 'Hires upscaler: ' in line:
                 highres_fix = line.split(': ', 1)[1]
             if 'Clip skip: ' in line:
                 clip_skip = line.split(': ', 1)[1]
             if 'Pose Reference: ' in line:
                 poseref = line.split(': ', 1)[1]
-
             if 'Denoising strength: ' in line:
                 strength = line.split(': ', 1)[1]
 
@@ -170,12 +165,9 @@ async def parse_image_info(ctx, image_url, command):
         if style:
             copy_command += f' styles:{style[0]}'
             extra_params += f'\nStyle preset: ``{style[0]}``'
-        if facefix:
-            copy_command += f' facefix:{facefix}'
-            extra_params += f'\nFace restoration model: ``{facefix}``'
-        if facedetail:
-            copy_command += f' facedetail:{facedetail}'
-            extra_params += f'\nFace detailer: ``{facedetail}``'
+        if adetailer:
+            copy_command += f' adetailer:{adetailer}'
+            extra_params += f'\nADetailer: ``{adetailer}``'
         if highres_fix:
             copy_command += f' highres_fix:{highres_fix}'
             extra_params += f'\nHigh-res fix: ``{highres_fix}``'

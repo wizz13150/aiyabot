@@ -9,8 +9,8 @@ from threading import Thread
 # the queue object for txt2image and img2img
 class DrawObject:
     def __init__(self, cog, ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height,
-                 guidance_scale, sampler, seed, strength, init_image, batch, styles, facefix, highres_fix,
-                 clip_skip, extra_net, epoch_time, facedetail, poseref, view):
+                 guidance_scale, sampler, seed, strength, init_image, batch, styles, highres_fix,
+                 clip_skip, extra_net, epoch_time, adetailer, poseref, view):
         self.cog = cog
         self.ctx = ctx
         self.simple_prompt = simple_prompt
@@ -27,8 +27,7 @@ class DrawObject:
         self.init_image = init_image
         self.batch = batch
         self.styles = styles
-        self.facefix = facefix
-        self.facedetail = facedetail
+        self.adetailer = adetailer
         self.poseref = poseref
         self.highres_fix = highres_fix
         self.clip_skip = clip_skip
@@ -120,10 +119,40 @@ class GlobalQueue:
     post_queue: list[PostObject] = []
 
     def get_queue_sizes():
-        return {
-            "General Queue": len(GlobalQueue.queue),
-            "/Generate Queue": len(GlobalQueue.generate_queue)
+        output = {}
+        # Ajout d'un espace réservé pour "Queue Sizes" pour qu'il agisse comme un titre.
+        output["Queue Sizes"] = ""
+        output["General Queue Size"] = len(GlobalQueue.queue)
+        output["Generate Queue Size"] = len(GlobalQueue.generate_queue)
+
+        # Mapping des types d'objets à leurs noms d'affichage
+        display_names = {
+            "DrawObject": "Draw",
+            "UpscaleObject": "Upscale",
+            "IdentifyObject": "Identify",
+            "DeforumObject": "Deforum"
         }
+
+        if GlobalQueue.queue:
+            general_queue_info = []
+            for index, item in enumerate(GlobalQueue.queue[:5], start=1):
+                item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"  # Utilisation du mapping
+                if isinstance(item, DrawObject):
+                    item_info += f" - Prompt: {item.prompt[:25] + '...' if len(item.prompt) > 25 else item.prompt}"
+                elif isinstance(item, DeforumObject):
+                    first_prompt = item.deforum_settings["Prompts"][0] if item.deforum_settings["Prompts"] else ""
+                    item_info += f" - Prompts: {first_prompt[:25] + '...' if len(first_prompt) > 25 else first_prompt}"
+                general_queue_info.append(item_info)
+            output["\n**General Queue next items**"] = "".join(general_queue_info)
+
+        if GlobalQueue.generate_queue:
+            generate_queue_info = []
+            for index, item in enumerate(GlobalQueue.generate_queue[:5], start=1):
+                item_info = f"\n{index}. **Generate** ({item.num_prompts} prompts)"
+                generate_queue_info.append(item_info)
+            output["\n**Generate Queue next items**"] = "".join(generate_queue_info)
+
+        return output
 
     @staticmethod
     def create_progress_bar(progress, total_batches=1, length=20, empty_char='□', filled_char='■', batch_char='▨', filled_batch_char='▣'):
@@ -183,7 +212,7 @@ class GlobalQueue:
 
                     progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
                     eta_relative = round(data["eta_relative"])
-                    #prompt = queue_object.get_prompt()
+                    #prompt = queue_object.get_prompt()s
                     #short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
                     short_prompt = queue_object.prompt[:125] + "..." if len(prompt) > 125 else prompt
                     sampling_step = data['state']['sampling_step']
@@ -211,7 +240,7 @@ class GlobalQueue:
                                           color=random_color)
                     await progress_msg.edit(embed=embed)
 
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1)
 
         # done, delete
         await progress_msg.delete()

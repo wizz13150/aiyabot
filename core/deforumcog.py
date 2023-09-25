@@ -102,7 +102,7 @@ class DeforumCog(commands.Cog):
                         print(f"Received job_id: {job_id}")
                         
                         # Wait for a short duration before checking the job status
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(10)
 
                         while True:
                             # Check the job status
@@ -409,6 +409,8 @@ class DeforumCog(commands.Cog):
                 view=None
             )
         )
+        if queuehandler.GlobalQueue.post_queue:
+            self.post(event_loop, queuehandler.GlobalQueue.post_queue.pop(0))
 
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.DeforumObject):
 
