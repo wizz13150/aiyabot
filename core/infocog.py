@@ -249,13 +249,27 @@ class InfoView(View):
 
         embed_tips1 = discord.Embed(title="Documentation", description="Welcome to the documentation! Basic usage and prompting tips is explained here.",
                                     colour=settings.global_var.embed_color)
-        embed_tips1.add_field(name="/draw command", value="Simply fill in the prompt and hit send!"
+        embed_tips1.add_field(name="/draw command",
+                              value="Simply fill in the prompt and hit send!"
                                                           "\nThere are many additional options, but they are automatically set filled with presets. They aren't required unless you want to tweak your prompts.")
-        embed_tips1.add_field(name="image-to-image", value="Use the /draw command for this, **init_img** option for an attachment or **init_url** for a link."
+        embed_tips1.add_field(name="image-to-image",
+                              value="Use the /draw command for this, **init_img** option for an attachment or **init_url** for a link."
                                                            "\nNote that **strength** interacts with img2img. The range is 0.0 to 1.0, with higher values having more effect on the image.")
         embed_tips1.add_field(name="\u200B", value="\u200B")
-        embed_tips1.add_field(name="/identify command", value="This command makes a caption for your image. A standard caption is generated with normal **phrasing**, or tags can be used to generate a list of keywords.")
-        embed_tips1.add_field(name="/upscale command", value="A simple command to upscale your image! You can upscale up to 4x at a time.")
+        embed_tips1.add_field(name="/generate command",
+                              value="Generates a prompt from text. This is the best command, for sure. Generate prompts from a few words, and Draw from them. The option **num_prompts** allows to choose the number of prompts to produce (1-5).")
+        embed_tips1.add_field(name="/identify command",
+                              value="This command makes a caption for your image. A standard caption is generated with normal **phrasing**, or tags can be used to generate a list of keywords.")
+        embed_tips1.add_field(name="/upscale command",
+                              value="A simple command to upscale your image! You can upscale up to 4x at a time.")
+        embed_tips1.add_field(name="/meta command",
+                              value="This command is used to extract metadata from an image. You can provide an image either by uploading it directly (`init_image`) or by providing a URL (`init_url`).")
+        embed_tips1.add_field(name="/leaderboard command",
+                              value="This command displays the leaderboard of users based on their interactions with the bot. It shows the top users by the number of images they generated.")
+        embed_tips1.add_field(name="/stats command",
+                              value="This command displays the total number of images that I have generated.")
+        embed_tips1.add_field(name="/queue command",
+                              value="Use this command to check the size of each queue, giving you an idea of the current workload.")
         embed_tips1.add_field(name="\u200B", value="\u200B")
 
         embed_tips2 = discord.Embed(title="Basic Prompting Tips", colour=settings.global_var.embed_color)

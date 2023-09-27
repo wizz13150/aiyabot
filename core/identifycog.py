@@ -12,6 +12,8 @@ from core import ctxmenuhandler
 from core import queuehandler
 from core import viewhandler
 from core import settings
+from core.queuehandler import GlobalQueue
+from core.leaderboardcog import LeaderboardCog
 
 
 class IdentifyCog(commands.Cog):
@@ -46,6 +48,7 @@ class IdentifyCog(commands.Cog):
                             init_image: Optional[discord.Attachment] = None,
                             init_url: Optional[str],
                             phrasing: Optional[str] = 'Normal'):
+        print(f"/Identify request -- {ctx.author.name}#{ctx.author.discriminator} -- Image: {init_image if init_image else 'None'}, URL: {init_url if init_url else 'None'}")
 
         has_image = True
         # url *will* override init image for compatibility, can be changed here
@@ -137,8 +140,12 @@ class IdentifyCog(commands.Cog):
             embed = discord.Embed(title='identify failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+
+        # update the leaderboard
+        LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Identify_Count")
+
         # check each queue for any remaining tasks
-        queuehandler.process_queue()
+        GlobalQueue.process_queue()
 
 
 def setup(bot):

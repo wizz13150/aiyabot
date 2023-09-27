@@ -1,3 +1,5 @@
+import asyncio
+from asyncio import run_coroutine_threadsafe
 import base64
 import discord
 import io
@@ -15,7 +17,19 @@ from core import queuehandler
 from core import viewhandler
 from core import settings
 from core import settingscog
+from core.queuehandler import GlobalQueue
+from core.leaderboardcog import LeaderboardCog
 
+
+# ratios dic
+size_ratios = {
+    "Portrait_Medium (832x1216)": (832, 1216),
+    "Portrait_Big (1024x1536)": (1024, 1536),
+    "Landscape_Medium (1216x832)": (1216, 832),
+    "Landscape_Big (1536x1024)": (1536, 1024),
+    "Square_Medium (1024x1024)": (1024, 1024),
+    "Square_Big (1536x1536)": (1536, 1536)
+}
 
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
     ctx_parse = discord.ApplicationContext
@@ -76,6 +90,13 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         choices=settings.global_var.size_range
     )
     @option(
+        'size_ratio',
+        str,
+        description='Select a size ratio for image generation. This overrides width & height!',
+        required=False,
+        choices=list(size_ratios.keys())
+    )
+    @option(
         'guidance_scale',
         str,
         description='Classifier-Free Guidance scale.',
@@ -86,7 +107,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         str,
         description='The sampler to use for generation.',
         required=False,
-        choices=settings.global_var.sampler_names,
+        autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.sampler_autocomplete),
     )
     @option(
         'seed',
@@ -109,11 +130,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.extra_net_autocomplete),
     )
     @option(
-        'facefix',
+        'adetailer',
         str,
-        description='Tries to improve faces in images.',
+        description='Choose which details to improve: Faces, Hands, or both.',
         required=False,
-        choices=settings.global_var.facefix_models,
+        choices=['Faces', 'Hands', 'Faces+Hands']
+    )
+    @option(
+        'poseref',
+        str,
+        description='The pose reference image URL.',
+        required=False,
     )
     @option(
         'highres_fix',
@@ -157,19 +184,23 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             data_model: Optional[str] = None,
                             steps: Optional[int] = None,
                             width: Optional[int] = None, height: Optional[int] = None,
+                            size_ratio: Optional[str] = None,
                             guidance_scale: Optional[str] = None,
                             sampler: Optional[str] = None,
                             seed: Optional[int] = -1,
                             styles: Optional[str] = None,
                             extra_net: Optional[str] = None,
-                            facefix: Optional[str] = None,
+                            adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,
                             init_image: Optional[discord.Attachment] = None,
-                            init_url: Optional[str],
+                            init_url: Optional[str] = None,
+                            poseref: Optional[discord.Attachment] = None,
                             batch: Optional[str] = None):
-
+        
+        called_from_button = getattr(ctx, 'called_from_button', False)
+        
         # update defaults with any new defaults from settingscog
         channel = '% s' % ctx.channel.id
         settings.check(channel)
@@ -187,8 +218,6 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             sampler = settings.read(channel)['sampler']
         if styles is None:
             styles = settings.read(channel)['style']
-        if facefix is None:
-            facefix = settings.read(channel)['facefix']
         if highres_fix is None:
             highres_fix = settings.read(channel)['highres_fix']
         if clip_skip is None:
@@ -234,9 +263,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         prompt = settings.extra_net_defaults(prompt, channel)
 
         if data_model != '':
-            print(f'Request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt}')
+            print(f'/Draw request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt}')
         else:
-            print(f'Request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt} -- Using model: {data_model}')
+            print(f'/Draw request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt} -- Using model: {data_model}')
 
         if seed == -1:
             seed = random.randint(0, 0xFFFFFFFF)
@@ -247,6 +276,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 init_image = requests.get(init_url)
             except(Exception,):
                 await ctx.send_response('URL image not found!\nI will do my best without it!')
+
+        # size_ratio preset will override height and width
+        if size_ratio:
+            width, height = size_ratios.get(size_ratio, (width, height))
 
         # verify values and format aiya initial reply
         reply_adds = ''
@@ -283,6 +316,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 reply_adds += f"\nStrength can't be ``{strength}``! Setting to default of `0.75`."
                 strength = 0.75
             reply_adds += f'\nURL Init Image: ``{init_image.url}``'
+        if adetailer is not None:
+            reply_adds += f'\nADetailer: ``{adetailer}``'
         # try to convert batch to usable format
         batch_check = settings.batch_format(batch)
         batch = list(batch_check)
@@ -318,17 +353,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             reply_adds += f'\nExtra network: ``{extra_net}``'
             if net_multi != 0.85:
                 reply_adds += f' (multiplier: ``{net_multi}``)'
-        if facefix != settings.read(channel)['facefix']:
-            reply_adds += f'\nFace restoration: ``{facefix}``'
         if clip_skip != settings.read(channel)['clip_skip']:
             reply_adds += f'\nCLIP skip: ``{clip_skip}``'
-            
+        if poseref is not None:
+            reply_adds += f'\nPose Reference URL: ``{poseref}``'
+
         epoch_time = int(time.time())
 
         # set up tuple of parameters to pass into the Discord view
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
-            init_image, batch, styles, facefix, highres_fix, clip_skip, extra_net, epoch_time)
+            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref)
         
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
@@ -340,8 +375,27 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 queuehandler.GlobalQueue.queue.append(queuehandler.DrawObject(self, *input_tuple, view))
         else:
             await queuehandler.process_dream(self, queuehandler.DrawObject(self, *input_tuple, view))
-        if user_queue_limit != "Stop":
-            await ctx.send_response(f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{simple_prompt}``\nSteps: ``{steps}``{reply_adds}')
+
+        message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{simple_prompt}``\nSteps: ``{steps}``{reply_adds}'
+
+        # check if webui is online
+        webui_is_offline = settings.check_webui_running(settings.global_var)
+        if webui_is_offline:
+            message_to_send += "\nNote: The model is currently offline. Your request won't be lost, it will be processed when it's back online !"
+
+       # check message length not exceeding 2000 chars
+        if len(message_to_send) > 2000:
+            excess_length = len(message_to_send) - 2000
+            truncated_prompt = simple_prompt[:len(simple_prompt) - excess_length - 5] + "..."
+            message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{truncated_prompt}``\nSteps: ``{steps}``{reply_adds}'
+         
+        # send to discord
+        #await ctx.channel.send(message_to_send)
+        if called_from_button:
+            #await ctx.send_followup(message_to_send)
+            await ctx.channel.send(message_to_send)
+        else:
+            await ctx.send_response(message_to_send)
 
     # the function to queue Discord posts
     def post(self, event_loop: queuehandler.GlobalQueue.post_event_loop, post_queue_object: queuehandler.PostObject):
@@ -357,6 +411,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
     # generate the image
     def dream(self, event_loop: queuehandler.GlobalQueue.event_loop, queue_object: queuehandler.DrawObject):
+    
+        # Start progression message
+        run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
+
         try:
             start_time = time.time()
 
@@ -364,6 +422,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             model_payload = {
                 "sd_model_checkpoint": queue_object.data_model
             }
+
+            style_to_use = queue_object.styles
+            if "zavyyumexl" in queue_object.data_model.lower():
+                style_to_use = "Yume Style"
+                queue_object.negative_prompt = ""
+
             payload = {
                 "prompt": queue_object.prompt,
                 "negative_prompt": queue_object.negative_prompt,
@@ -379,7 +443,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "n_iter": queue_object.batch[0],
                 "batch_size": queue_object.batch[1],
                 "styles": [
-                    queue_object.styles
+                    style_to_use
                 ]
             }
 
@@ -407,19 +471,71 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             # add any options that would go into the override_settings
             override_settings = {"CLIP_stop_at_last_layers": queue_object.clip_skip}
-            if queue_object.facefix != 'None':
-                override_settings["face_restoration_model"] = queue_object.facefix
-                # face restoration needs this extra parameter
-                facefix_payload = {
-                    "restore_faces": True,
+
+            alwayson_scripts_settings = {}
+            
+            # add adetailer settings
+            if queue_object.adetailer and queue_object.adetailer != "None":
+                model_mappings = {
+                    "Faces": {
+                        "ad_model": "face_yolov8n.pt",
+                        "ad_use_inpaint_width_height": True,
+                        "ad_inpaint_width": 768,
+                        "ad_inpaint_height": 768,
+                    },
+                    "Hands": {
+                        "ad_model": "hand_yolov8n.pt",
+                        "ad_use_inpaint_width_height": True,
+                        "ad_inpaint_width": 768,
+                        "ad_inpaint_height": 768,
+                        "ad_use_noise_multiplier": True,
+                        "ad_noise_multiplier": 1.05,
+                    }
                 }
-                payload.update(facefix_payload)
+                args = [True]
+                if queue_object.adetailer == "Faces+Hands":
+                    args.extend([model_mappings["Faces"], model_mappings["Hands"]])
+                else:
+                    args.append(model_mappings[queue_object.adetailer])
+                alwayson_scripts_settings = {
+                    "ADetailer": {
+                        "args": args
+                    }
+                }
+
+            # add poseref settings
+            if queue_object.poseref is not None:
+                pimage = base64.b64encode(requests.get(queue_object.poseref, stream=True).content).decode('utf-8')
+                controlnet_payload = {
+                    "controlnet": {
+                        "args": [
+                            {
+                                "input_image": 'data:image/png;base64,' + pimage,
+                                "control_mode": "Balanced",
+                                "pixel_perfect": True,
+                                "loopback": False,
+                                "low_vram": False,
+                                "module": "openpose_full",
+                                "model": "controlnetxlCNXL_thibaudOpenposeLora [72a4faf9]",
+                                "resize_mode": "Resize and Fill",
+                                "weight": 1
+                            }
+                        ]
+                    }
+                }
+                alwayson_scripts_settings.update(controlnet_payload)
 
             # update payload with override_settings
             override_payload = {
                 "override_settings": override_settings
             }
             payload.update(override_payload)
+
+            # update payload with alwayson_scripts
+            alwayson_scripts_payload = {
+                "alwayson_scripts": alwayson_scripts_settings
+            }
+            payload.update(alwayson_scripts_payload)
 
             # send normal payload to webui and only send model payload if one is defined
             s = settings.authenticate_user()
@@ -506,7 +622,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 if batch == True:
                     image_data = (image, file_path, str_parameters)
                     images.append(image_data)
-                    
+
                 settings.stats_count(1)
 
                 # increment seed for view when using batch
@@ -516,11 +632,23 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     new_tuple = tuple(batch_seed)
                     queue_object.view.input_tuple = new_tuple
 
+                if queue_object.poseref is not None:
+                    break
+
+            # progression flag, job done
+            queue_object.is_done = True
+
+            # update the leaderboard
+            batch_total = queue_object.batch[0] * queue_object.batch[1]
+            for _ in range(batch_total):
+                LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Image_Count")
+
             # set up discord message
             content = f'> for {queue_object.ctx.author.name}'
             noun_descriptor = "drawing" if image_count == 1 else f'{image_count} drawings'
             draw_time = '{0:.3f}'.format(end_time - start_time)
-            message = f'my {noun_descriptor} of ``{queue_object.simple_prompt}`` took me ``{draw_time}`` seconds!'
+            model_name = queue_object.data_model.split('.safetensors')[0]
+            message = f'my {noun_descriptor} of ``{queue_object.simple_prompt}`` with ``{model_name}`` took me ``{draw_time}`` seconds!'
 
             view = queue_object.view
 
@@ -569,22 +697,25 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
-                filename=f'{queue_object.seed}-{count}.png'
+                if queue_object.poseref is not None:
+                    filename=f'{queue_object.seed}-1.png'
+                else:
+                    filename=f'{queue_object.seed}-{count}.png'
                 file = add_metadata_to_image(image,str_parameters, filename)
                 queuehandler.process_post(
                     self, queuehandler.PostObject(
                         self, queue_object.ctx, content=content, file=file, embed='', view=view))
 
         except KeyError as e:
-            embed = discord.Embed(title='txt2img failed', description=f'An invalid parameter was found!\n{e}',
-                                  color=settings.global_var.embed_color)
+            embed = discord.Embed(title='txt2img failed', description=f'An invalid parameter was found!\nKey causing the error: {e}',
+                                color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
         except Exception as e:
             embed = discord.Embed(title='txt2img failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
         # check each queue for any remaining tasks
-        queuehandler.process_queue()
+        GlobalQueue.process_queue()
 
 
 def setup(bot):

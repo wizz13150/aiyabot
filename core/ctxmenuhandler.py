@@ -68,8 +68,8 @@ async def parse_image_info(ctx, image_url, command):
 
         # initialize extra params
         steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
-        style, facefix, highres_fix, clip_skip = '', '', '', ''
-        strength, has_init_url = '', False
+        style, adetailer, highres_fix, clip_skip = '', None, '', ''
+        strength, poseref, has_init_url = '', '', False
         if command == 'button' and ctx is not None:
             has_init_url = True
 
@@ -97,7 +97,6 @@ async def parse_image_info(ctx, image_url, command):
                 model_hash = line.split(': ', 1)[1]
             if 'Model: ' in line:
                 model_name = line.split(': ', 1)[1]
-
             if 'Steps: ' in line:
                 steps = line.split(': ', 1)[1]
             if 'Size: ' in line:
@@ -108,14 +107,14 @@ async def parse_image_info(ctx, image_url, command):
                 sampler = line.split(': ', 1)[1]
             if 'Seed: ' in line:
                 seed = line.split(': ', 1)[1]
-
-            if 'Face restoration: ' in line:
-                facefix = line.split(': ', 1)[1]
+            if 'ADetailer: ' in line:
+                adetailer = line.split(': ', 1)[1]
             if 'Hires upscaler: ' in line:
                 highres_fix = line.split(': ', 1)[1]
             if 'Clip skip: ' in line:
                 clip_skip = line.split(': ', 1)[1]
-
+            if 'Pose Reference: ' in line:
+                poseref = line.split(': ', 1)[1]
             if 'Denoising strength: ' in line:
                 strength = line.split(': ', 1)[1]
 
@@ -166,9 +165,9 @@ async def parse_image_info(ctx, image_url, command):
         if style:
             copy_command += f' styles:{style[0]}'
             extra_params += f'\nStyle preset: ``{style[0]}``'
-        if facefix:
-            copy_command += f' facefix:{facefix}'
-            extra_params += f'\nFace restoration model: ``{facefix}``'
+        if adetailer:
+            copy_command += f' adetailer:{adetailer}'
+            extra_params += f'\nADetailer: ``{adetailer}``'
         if highres_fix:
             copy_command += f' highres_fix:{highres_fix}'
             extra_params += f'\nHigh-res fix: ``{highres_fix}``'
@@ -189,6 +188,9 @@ async def parse_image_info(ctx, image_url, command):
         if has_init_url:
             # not interested in adding embed fields for strength and init_image
             copy_command += f' strength:{strength} init_url:{str(ctx)}'
+        if poseref:
+            copy_command += f' poseref:{poseref}'
+            extra_params += f'\nPose Reference URL: ``{poseref}``'
 
         embed.add_field(name=f'Command for copying', value=f'', inline=False)
         embed.set_footer(text=copy_command)
@@ -198,7 +200,7 @@ async def parse_image_info(ctx, image_url, command):
 
         await ctx.respond(embed=embed, ephemeral=True)
     except Exception as e:
-        print('The image info command broke: ' + str(e))
+        print(f"Erreur dans parse_image_info: {e}")
         if command == 'slash':
             message = "\nIf you're copying from Discord and think there should be image info," \
                       " try **Copy Link** instead of **Copy Image**"
@@ -269,6 +271,7 @@ async def quick_upscale(self, ctx, message: discord.Message):
         await ctx.send_response(
             f'<@{ctx.author.id}>, upscaling {message}by ``{resize}``x using ``{upscaler_1}``!\n'
             f'Queue: ``{len(queuehandler.GlobalQueue.queue)}``', delete_after=45.0)
+        
         
 async def batch_download(ctx, message: discord.Message):
     # look for batch information in message

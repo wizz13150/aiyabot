@@ -36,23 +36,23 @@ save_outputs = "True"
 dir = "outputs"
 
 # The limit of tasks a user can have waiting in queue (at least 1)
-queue_limit = 1
+queue_limit = 99
 
 # Whether or not buttons keep generating in batches ("True"/"False")
-batch_buttons = "False"
+batch_buttons = "True"
 
 # Whether or not buttons are restricted to user who requested image ("True"/"False")
-restrict_buttons = "True"
+restrict_buttons = "False"
 
 # The maximum value allowed for width/height (keep as multiple of 64)
-max_size = 1024
+max_size = 832
 
 # The resize amount when using context menu Quick Upscale
 quick_upscale_resize = 2.0
 
 # AIYA won't generate if prompt has any words in the ban list
 # Separate with commas; example, ["a", "b", "c"]
-prompt_ban_list = []
+prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Cock", "Anal", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
 # These words will be automatically removed from the prompt
 prompt_ignore_list = []
 # Choose whether or not ignored words are displayed to user
@@ -62,25 +62,24 @@ negative_prompt_prefix = []
 
 
 # the fallback channel defaults template for AIYA if nothing is set
-negative_prompt = ""
-data_model = ""
-steps = 30
-max_steps = 50
-width = 512
-height = 512
-guidance_scale = "7.0"
-sampler = "Euler a"
+negative_prompt = "(worst quality:2), (low quality:2), (normal quality:2), lowres, easynegative, signature, watermark, username, cropped"
+data_model = "Default(Lyriel)"
+steps = 33
+max_steps = 100
+width = 832
+height = 1216
+guidance_scale = "8.0"
+sampler = "DPM++ 2M SDE Karras"
 style = "None"
-facefix = "None"
 highres_fix = "Disabled"
 clip_skip = 1
 hypernet = "None"
 hyper_multi = "0.85"
-lora = "None"
+lora = "Details"
 lora_multi = "0.85"
 strength = "0.75"
 batch = "1,1"
-max_batch = "1,1"
+max_batch = "32,1"
 upscaler_1 = "ESRGAN_4x"
 """
 
@@ -90,7 +89,13 @@ class GlobalVar:
     url = ""
     dir = ""
     wait_message = []
+    wait_message_prompt = []
+    wait_message_deforum = []
+    wait_message_deforum_end = []
     wait_message_count = 0
+    wait_message_prompt_count = 0
+    wait_message_deforum_count = 0
+    wait_message_deforum_count_end = 0
     embed_color = discord.Colour.from_rgb(222, 89, 28)
     gradio_auth = None
     username: Optional[str] = None
@@ -103,7 +108,6 @@ class GlobalVar:
     size_range_exceed = None
     sampler_names = []
     style_names = {}
-    facefix_models = []
     embeddings_1 = []
     embeddings_2 = []
     hyper_names = []
@@ -231,6 +235,21 @@ def messages():
     return random_message
 
 
+def messages_prompt():
+    random_message_prompt = global_var.wait_message_prompt[random.randint(0, global_var.wait_message_prompt_count)]
+    return random_message_prompt
+
+
+def messages_deforum():
+    random_message_deforum = global_var.wait_message_deforum[random.randint(0, global_var.wait_message_deforum_count)]
+    return random_message_deforum
+
+
+def messages_deforum_end():
+    random_message_deforum_end = global_var.wait_message_deforum_end[random.randint(0, global_var.wait_message_deforum_end_count)]
+    return random_message_deforum_end
+
+
 def check(channel_id):
     try:
         read(str(channel_id))
@@ -265,7 +284,6 @@ def generate_template(template_pop, config):
     template_pop['guidance_scale'] = config['guidance_scale']
     template_pop['sampler'] = config['sampler']
     template_pop['style'] = config['style']
-    template_pop['facefix'] = config['facefix']
     template_pop['highres_fix'] = config['highres_fix']
     template_pop['clip_skip'] = config['clip_skip']
     template_pop['hypernet'] = config['hypernet']
@@ -413,6 +431,15 @@ def startup_check():
             print(f'Waiting for Web UI at {global_var.url}...')
             time.sleep(20)
 
+def check_webui_running(global_var):
+    try:
+        response = requests.get(global_var.url + '/sdapi/v1/cmd-flags')
+        if response.status_code == 404:
+            print('API is unreachable! Please check the WebUI manually.')
+            return True
+    except Exception as e:
+        print(f'An exception occurred while checking if the WebUI is online:\ns{str(e)}')
+    return False
 
 def files_check():
     # load random messages for aiya to say
@@ -421,6 +448,24 @@ def files_check():
         for row in message_data:
             global_var.wait_message.append(row[0])
     global_var.wait_message_count = len(global_var.wait_message) - 1
+
+    with open(f'{path}messages_prompt.csv', encoding='UTF-8') as csv_file:
+        message_prompt_data = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_prompt_data:
+            global_var.wait_message_prompt.append(row[0])
+    global_var.wait_message_prompt_count = len(global_var.wait_message_prompt) - 1
+
+    with open(f'{path}messages_deforum.csv', encoding='UTF-8') as csv_file:
+        message_deforum_data = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_deforum_data:
+            global_var.wait_message_deforum.append(row[0])
+    global_var.wait_message_deforum_count = len(global_var.wait_message_deforum) - 1
+
+    with open(f'{path}messages_deforum_end.csv', encoding='UTF-8') as csv_file:
+        message_deforum_data_end = list(csv.reader(csv_file, delimiter='|'))
+        for row in message_deforum_data_end:
+            global_var.wait_message_deforum_end.append(row[0])
+    global_var.wait_message_deforum_end_count = len(global_var.wait_message_deforum_end) - 1
 
     # creating files if they don't exist
     if os.path.isfile(f'{path}stats.txt'):
@@ -520,8 +565,6 @@ def populate_global_vars():
     global_var.style_names['None'] = ''
     for s2 in r2.json():
         global_var.style_names[s2['name']] = s2['prompt'], s2['negative_prompt']
-    for s3 in r3.json():
-        global_var.facefix_models.append(s3['name'])
     for s4, shape in r4.json()['loaded'].items():
         if shape['shape'] == 768:
             global_var.embeddings_1.append(s4)
@@ -575,8 +618,6 @@ def populate_global_vars():
     except(Exception,):
         print("Trouble accessing Web UI config! I can't pull the LoRAs or High-res upscaler lists!")
     # format some global lists, ensure default "None" options exist
-    if 'None' not in global_var.facefix_models:
-        global_var.facefix_models.insert(0, 'None')
     if 'None' not in global_var.hyper_names:
         global_var.hyper_names.insert(0, 'None')
     if '' in global_var.lora_names:

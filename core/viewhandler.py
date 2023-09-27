@@ -28,15 +28,16 @@ input_tuple[0] = ctx
 [12] = init_image
 [13] = batch
 [14] = style
-[15] = facefix
-[16] = highres_fix
-[17] = clip_skip
-[18] = extra_net
-[19] = epoch_time
+[15] = highres_fix
+[16] = clip_skip
+[17] = extra_net
+[18] = epoch_time
+[19] = adetailer
+[20] = poseref
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
-               'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles', 'facefix',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time']
+               'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref']
 
 
 # the modal that is used for the 🖋 button
@@ -44,6 +45,13 @@ class DrawModal(Modal):
     def __init__(self, input_tuple) -> None:
         super().__init__(title="Change Prompt!")
         self.input_tuple = input_tuple
+
+        # fix incremented seed in Edit when batch > 1
+        current_batch = input_tuple[13][0] * input_tuple[13][1]
+        if current_batch > 1:
+            original_seed = input_tuple[10] - current_batch
+        else:
+            original_seed = input_tuple[10]
 
         # run through mod function to get clean negative since I don't want to add it to stablecog tuple
         self.clean_negative = input_tuple[3]
@@ -71,7 +79,7 @@ class DrawModal(Modal):
             InputText(
                 label='Keep seed? Delete to randomize',
                 style=discord.InputTextStyle.short,
-                value=input_tuple[10],
+                value=original_seed,
                 required=False
             )
         )
@@ -86,7 +94,7 @@ class DrawModal(Modal):
         # expose each available (supported) option, even if output didn't use them
         ex_params = f'data_model:{display_name}'
         for index, value in enumerate(tuple_names[index_start:], index_start):
-            if index == 10 or 12 <= index <= 13 or index == 16:
+            if index == 10 or 12 <= index <= 13 or index == 15:
                 continue
             ex_params += f'\n{value}:{input_tuple[index]}'
 
@@ -122,9 +130,9 @@ class DrawModal(Modal):
         net_multi, new_net_multi = 0.85, 0
         embed_err = discord.Embed(title="I can't redraw this!", description="")
         # if extra network is used, find the multiplier
-        if pen[18]:
-            if pen[18] in pen[2]:
-                net_multi = re.search(f'{pen[18]}:(.*)>', pen[2]).group(1)
+        if pen[17]:
+            if pen[17] in pen[2]:
+                net_multi = re.search(f'{pen[17]}:(.*)>', pen[2]).group(1)
 
         if settings.global_var.size_range:
             max_size = settings.global_var.size_range
@@ -209,18 +217,19 @@ class DrawModal(Modal):
                     await interaction.response.send_message(embed=embed_err, ephemeral=True)
                     await infocog.InfoView.button_style(infocog_view, '', interaction)
                     return
-
-            if 'facefix:' in line:
-                if line.split(':', 1)[1] in settings.global_var.facefix_models:
-                    pen[15] = line.split(':', 1)[1]
+            if 'adetailer:' in line:
+                value = line.split(':', 1)[1].strip()
+                valid_choices = ['None', 'Faces', 'Hands', 'Faces+Hands']
+                if value in valid_choices:
+                    pen[19] = value
                 else:
                     invalid_input = True
-                    embed_err.add_field(name=f"`{line.split(':', 1)[1]}` can't fix faces! I have suggestions.",
-                                        value=', '.join(['`%s`' % x for x in settings.global_var.facefix_models]),
+                    embed_err.add_field(name=f"`{value}` is not valid for adetailer!",
+                                        value=f'Make sure you enter one of the following: `{", ".join(valid_choices)}`.',
                                         inline=False)
             if 'clip_skip:' in line:
                 try:
-                    pen[17] = [x for x in range(1, 14, 1) if x == int(line.split(':', 1)[1])][0]
+                    pen[16] = [x for x in range(1, 14, 1) if x == int(line.split(':', 1)[1])][0]
                 except(Exception,):
                     invalid_input = True
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is too much CLIP to skip!",
@@ -229,9 +238,9 @@ class DrawModal(Modal):
                 if line.count(':') == 2:
                     net_check = re.search(':(.*):', line).group(1)
                     if net_check in settings.global_var.extra_nets:
-                        pen[18] = line.split(':', 1)[1]
+                        pen[17] = line.split(':', 1)[1]
                 elif line.count(':') == 1 and line.split(':', 1)[1] in settings.global_var.extra_nets:
-                    pen[18] = line.split(':', 1)[1]
+                    pen[17] = line.split(':', 1)[1]
                 else:
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is an unknown extra network!",
                                         value="I used the info command for you! Please review the hypernets and LoRAs.")
@@ -261,8 +270,8 @@ class DrawModal(Modal):
             if model_found:
                 pen[2] = new_token + pen[1]
             # figure out what extra_net was used
-            if pen[18] != 'None':
-                pen[2], pen[18], new_net_multi = settings.extra_net_check(pen[2], pen[18], net_multi)
+            if pen[17] != 'None':
+                pen[2], pen[17], new_net_multi = settings.extra_net_check(pen[2], pen[17], net_multi)
             channel = '% s' % pen[0].channel.id
             pen[2] = settings.extra_net_defaults(pen[2], channel)
             # set batch to 1
@@ -281,15 +290,15 @@ class DrawModal(Modal):
                 prompt_output += f'\nNew model: ``{new_model}``'
             index_start = 5
             for index, value in enumerate(tuple_names[index_start:], index_start):
-                if index == 13 or index == 16 or index == 18:
+                if index == 13 or index == 15 or index == 17:
                     continue
                 if str(pen[index]) != str(self.input_tuple[index]):
                     prompt_output += f'\nNew {value}: ``{pen[index]}``'
-            if str(pen[18]) != 'None':
-                if str(pen[18]) != str(self.input_tuple[18]) and new_net_multi != net_multi or new_net_multi != net_multi:
-                    prompt_output += f'\nNew extra network: ``{pen[18]}`` (multiplier: ``{new_net_multi}``)'
-                elif str(pen[18]) != str(self.input_tuple[18]):
-                    prompt_output += f'\nNew extra network: ``{pen[18]}``'
+            if str(pen[17]) != 'None':
+                if str(pen[17]) != str(self.input_tuple[17]) and new_net_multi != net_multi or new_net_multi != net_multi:
+                    prompt_output += f'\nNew extra network: ``{pen[17]}`` (multiplier: ``{new_net_multi}``)'
+                elif str(pen[17]) != str(self.input_tuple[17]):
+                    prompt_output += f'\nNew extra network: ``{pen[17]}``'
 
             print(f'Redraw -- {interaction.user.name}#{interaction.user.discriminator} -- Prompt: {pen[1]}')
 
@@ -310,17 +319,18 @@ class DrawView(View):
             batch = input_tuple[13]
             batch_count = batch[0] * batch[1]
             if batch_count > 1:
-                download_menu = DownloadMenu(input_tuple[19], input_tuple[10], batch_count, input_tuple)
+                download_menu = DownloadMenu(input_tuple[18], input_tuple[10], batch_count, input_tuple)
                 download_menu.callback = download_menu.callback
                 self.add_item(download_menu)
-                upscale_menu = UpscaleMenu(input_tuple[19], input_tuple[10], batch_count, input_tuple)
+                upscale_menu = UpscaleMenu(input_tuple[18], input_tuple[10], batch_count, input_tuple)
                 upscale_menu.callback = upscale_menu.callback
                 self.add_item(upscale_menu)
 
     # the 🖋 button will allow a new prompt and keep same parameters for everything else
     @discord.ui.button(
         custom_id="button_re-prompt",
-        emoji="🖋")
+        emoji="🖋",
+        label="Edit")
     async def button_draw(self, button, interaction):
         buttons_free = True
         try:
@@ -350,7 +360,8 @@ class DrawView(View):
     # the 🎲 button will take the same parameters for the image, change the seed, and add a task to the queue
     @discord.ui.button(
         custom_id="button_re-roll",
-        emoji="🎲")
+        emoji="🎲",
+        label="Re-roll")
     async def button_roll(self, button, interaction):
         buttons_free = True
         try:
@@ -396,8 +407,9 @@ class DrawView(View):
     
     # the ⬆️ button will upscale the selected image
     @discord.ui.button(
-        custom_id="button_upscale",
-        emoji="⬆️")
+    custom_id="button_upscale",
+    emoji="⬆️",
+    label="Upscale")
     async def button_upscale(self, button, interaction):
         buttons_free = True
         try:
@@ -447,9 +459,11 @@ class DrawView(View):
     # the 📋 button will let you review the parameters of the generation
     @discord.ui.button(
         custom_id="button_review",
-        emoji="📋")
+        emoji="📋",
+        label="Review")
     async def button_review(self, button, interaction):
-        # reuse "read image info" command from ctxmenuhandler
+        print("[DEBUG] Button review clicked.")
+
         init_url = None
         try:
             attachment = self.message.attachments[0]
@@ -458,8 +472,8 @@ class DrawView(View):
             embed = await ctxmenuhandler.parse_image_info(init_url, attachment.url, "button")
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
-            print('The clipboard button broke: ' + str(e))
-            # if interaction fails, assume it's because aiya restarted (breaks buttons)
+            print(f"[ERROR] The clipboard button broke: {str(e)}.")
+
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
@@ -469,20 +483,17 @@ class DrawView(View):
     # the button to delete generated images
     @discord.ui.button(
         custom_id="button_x",
-        emoji="❌")
+        emoji="❌",
+        label="Delete")
     async def delete(self, button, interaction):
         try:
-            # check if the output is from the person who requested it
-            if interaction.user.id == self.input_tuple[0].author.id:
-                await interaction.message.delete()
-            else:
-                await interaction.response.send_message("You can't delete other people's images!", ephemeral=True)
+            await interaction.message.delete()
         except(Exception,):
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
                                             "You can react with ❌ to delete the image.", ephemeral=True)
-            
+
 class DeleteView(View):
     def __init__(self, input_tuple):
         super().__init__(timeout=None)
@@ -490,7 +501,8 @@ class DeleteView(View):
 
     @discord.ui.button(
         custom_id="button_x_solo",
-        emoji="❌")
+        emoji="❌",
+        label="Delete")
     async def delete(self, button, interaction):
         try:
             # check if the output is from the person who requested it
@@ -503,7 +515,7 @@ class DeleteView(View):
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
                                             "You can react with ❌ to delete the image.", ephemeral=True)
-            
+
 class DownloadMenu(discord.ui.Select):
     def __init__(self, epoch_time, seed, batch_count, input_tuple):
         self.input_tuple = input_tuple
@@ -566,7 +578,7 @@ class UpscaleMenu(discord.ui.Select):
                 upscaler_1 = settings.read(channel)['upscaler_1']
                 upscale_tuple = (ctx, '2.0', init_image, upscaler_1, "None", '0.5', '0.0', '0.0', False) # Create defaults for upscale. If desired we can add options to the per channel upscale settings for this.
 
-                print(f'Upscaling -- {interaction.user.name}#{interaction.user.discriminator}')
+                print(f'Upscaling request -- {interaction.user.name}#{interaction.user.discriminator} for {partial_path}')
 
                 # set up the draw dream and do queue code again for lack of a more elegant solution
                 draw_dream = upscalecog.UpscaleCog(self)
