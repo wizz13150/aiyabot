@@ -95,12 +95,12 @@ class DeforumCog(commands.Cog):
                     # Check if the response status is 202 (Accepted)
                     if response.status == 202:
                         print("Job has been accepted for processing.")
-                        
+
                         # Extract job_id from the response
                         data = await response.json()
                         job_id = data["job_ids"][0]
                         print(f"Received job_id: {job_id}")
-                        
+
                         # Wait for a short duration before checking the job status
                         await asyncio.sleep(10)
 
@@ -412,29 +412,27 @@ class DeforumCog(commands.Cog):
         if queuehandler.GlobalQueue.post_queue:
             self.post(event_loop, queuehandler.GlobalQueue.post_queue.pop(0))
 
-    def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.DeforumObject):
-
-        # Start progression message
-        #run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
-
+    def dream(self, event_loop: queuehandler.GlobalQueue.event_loop, queue_object: queuehandler.DeforumObject):
         try:
+            # start progression message
+            run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
+
             print('Making a Deforum animation...')
             deforum_settings = queue_object.deforum_settings
 
             # run generation
             future = run_coroutine_threadsafe(self.make_animation(deforum_settings), event_loop)
             path = future.result()
-            #queue_object.deforum_settings = deforum_settings
 
-            # Schedule the task to create the view and send the message
+            # schedule the task to create the view and send the message
             event_loop.create_task(self.post_dream(queue_object.ctx, queue_object, path))
+
+            # progression flag, job done
+            queue_object.is_done = True
 
         except Exception as e:
             embed = discord.Embed(title='Generation failed', description=f'{e}\n{traceback.print_exc()}', color=0x00ff00)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
-
-        # progression flag, job done
-        queue_object.is_done = True
 
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
