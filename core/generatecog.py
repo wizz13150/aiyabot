@@ -365,7 +365,15 @@ class GenerateCog(commands.Cog):
             'repetition_penalty': repetition_penalty
         }
 
-        modified_args = [f"{key}: ``{value}``" for key, value in current_values.items() if value != default_values[key]]
+        key_mapping = {
+            'num_prompts': 'Number of Prompts',
+            'max_length': 'Max Length',
+            'temperature': 'Temperature',
+            'top_k': 'Top K',
+            'repetition_penalty': 'Repetition Penalty'
+        }
+
+        modified_args = [f"{key_mapping[key]}: ``{value}``" for key, value in current_values.items() if value != default_values[key]]
         if modified_args:
             args_message = " - ".join(modified_args)
             response_message = f"<@{ctx.author.id}>, {settings.messages_prompt()}\nQueue: ``{len(queuehandler.GlobalQueue.generate_queue)}`` - Your text: ``{prompt}``\n{args_message}"

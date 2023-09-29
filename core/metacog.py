@@ -98,7 +98,7 @@ class MetaView(ui.View):
     async def copy_generation_data(self, button: ui.Button, interaction: discord.Interaction):
         try:
             metadata_cleaned = self.metadata_raw.replace("\n", ", ")
-         
+
             # Create the Embed and mention the user who triggered the interaction in the description
             embed = Embed(
                 title="──── Generation Datas────", 
@@ -172,7 +172,7 @@ class MetaCog(commands.Cog):
     )
     async def meta_handler(self, ctx, init_image: Optional[discord.Attachment] = None, init_url: Optional[str] = None):
         print(f"/Meta request -- {ctx.author.name}#{ctx.author.discriminator} ... Image: {init_image if init_image else 'None'}, URL: {init_url if init_url else 'None'}")
-        
+
         if init_url:
             try:
                 response = requests.get(init_url)
@@ -186,7 +186,7 @@ class MetaCog(commands.Cog):
         else:
             await ctx.respond("🚫 No image provided.", ephemeral=True)
             return
-        
+
         image_data.seek(0)
         image = Image.open(image_data)
         metadata = image.info.get('parameters', '')  # Assume the metadata you want is under the 'parameters' key

@@ -404,7 +404,7 @@ class DrawView(View):
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
-    
+
     # the ⬆️ button will upscale the selected image
     @discord.ui.button(
     custom_id="button_upscale",
@@ -525,7 +525,7 @@ class DownloadMenu(discord.ui.Select):
         input_options = [(f, str(i)) for i, f in enumerate(filename, start=1)]
         options = [discord.SelectOption(label=option[1], value=option[0], description=option[0]) for option in input_options]
         super().__init__(custom_id="download_menu", placeholder='Choose images to download...', min_values=1, max_values=max_values, options=options)
-    
+
     async def callback(self, interaction: discord.Interaction):
         try: 
             buttons_free = True
@@ -538,7 +538,7 @@ class DownloadMenu(discord.ui.Select):
                     image_path = f'{settings.global_var.dir}/{value}'
                     file = discord.File(image_path, f'{value}')
                     files.append(file)
-                
+
                 if files:
                     await interaction.response.send_message(f'<@{interaction.user.id}>, please wait I am fetching your requested images', view=None)
                     blocks = [files[i:i+10] for i in range(0, len(files), 10)]
@@ -546,13 +546,13 @@ class DownloadMenu(discord.ui.Select):
                         await interaction.followup.send(f'<@{interaction.user.id}>, Here are the batch files you requested', files=block, view=DeleteView(self.input_tuple))
             else:
                 await interaction.response.send_message("You can't download other people's images!", ephemeral=True)
-        
+
         except Exception as e:
             print('The download menu broke: ' + str(e))
             self.disabled = True
             await interaction.response.edit_message(view=self.view)
             await interaction.followup.send("I may have been restarted. This button no longer works.\n", ephemeral=True)
-        
+
 class UpscaleMenu(discord.ui.Select):
     def __init__(self, epoch_time, seed, batch_count, input_tuple):
         self.input_tuple = input_tuple
@@ -561,7 +561,7 @@ class UpscaleMenu(discord.ui.Select):
         input_options = [(f, str(i)) for i, f in enumerate(filename, start=1)]
         options = [discord.SelectOption(label=option[1], value=option[0], description=option[0]) for option in input_options]
         super().__init__(custom_id="upscale_menu", placeholder='Choose images to upscale...', min_values=1, max_values=1, options=options)
-    
+
     async def callback(self, interaction: discord.Interaction):
         try: 
             buttons_free = True

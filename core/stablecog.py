@@ -198,9 +198,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             init_url: Optional[str] = None,
                             poseref: Optional[discord.Attachment] = None,
                             batch: Optional[str] = None):
-        
+
         called_from_button = getattr(ctx, 'called_from_button', False)
-        
+
         # update defaults with any new defaults from settingscog
         channel = '% s' % ctx.channel.id
         settings.check(channel)
@@ -364,7 +364,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
             init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref)
-        
+
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
         user_queue_limit = settings.queue_check(ctx.author)
@@ -694,7 +694,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     queuehandler.process_post(
                         self, queuehandler.PostObject(
                             self, queue_object.ctx, content=content, file=file, embed='', view=view))
-            
+
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
                 if queue_object.poseref is not None:

@@ -415,7 +415,7 @@ class DeforumCog(commands.Cog):
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.DeforumObject):
 
         # Start progression message
-        #srun_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
+        #run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
 
         try:
             print('Making a Deforum animation...')
@@ -434,11 +434,10 @@ class DeforumCog(commands.Cog):
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
 
         # progression flag, job done
-        #queue_object.is_done = True
+        queue_object.is_done = True
 
-        # check queue for any remaining tasks
-        if queuehandler.GlobalQueue.queue:
-            event_loop.create_task(queuehandler.process_dream(self, queuehandler.GlobalQueue.queue.pop(0)))
+        # check each queue for any remaining tasks
+        GlobalQueue.process_queue()
 
 
     # post to discord
@@ -466,9 +465,6 @@ class DeforumCog(commands.Cog):
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
         else:
             await ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')
-
-        # check each queue for any remaining tasks
-        GlobalQueue.process_queue()
 
 
 def setup(bot):

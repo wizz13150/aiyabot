@@ -136,10 +136,10 @@ class GlobalQueue:
             for index, item in enumerate(GlobalQueue.queue[:5], start=1):
                 item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"  # Utilisation du mapping
                 if isinstance(item, DrawObject):
-                    item_info += f" - Prompt: {item.prompt[:25] + '...' if len(item.prompt) > 25 else item.prompt}"
+                    item_info += f" - Prompt: {item.prompt[:30] + '...' if len(item.prompt) > 30 else item.prompt}"
                 elif isinstance(item, DeforumObject):
                     first_prompt = item.deforum_settings["Prompts"][0] if item.deforum_settings["Prompts"] else ""
-                    item_info += f" - Prompts: {first_prompt[:25] + '...' if len(first_prompt) > 25 else first_prompt}"
+                    item_info += f" - `{first_prompt[:30] + '...`' if len(first_prompt) > 30 else first_prompt}"
                 general_queue_info.append(item_info)
             output["\n**General Queue next items**"] = "".join(general_queue_info)
 
@@ -158,9 +158,7 @@ class GlobalQueue:
      
         # mark batches
         batch_marker_positions = set(int(length * i // total_batches) for i in range(1, total_batches))
-        
         bar = []
-     
         for i in range(length):
             # not more than available slots
             if i < filled_length:
@@ -173,7 +171,6 @@ class GlobalQueue:
                     bar.append(batch_char)
                 else:
                     bar.append(empty_char)
-     
         return f"`[{''.join(bar)}]`"
 
     @staticmethod
@@ -243,7 +240,7 @@ class GlobalQueue:
         await progress_msg.delete()
 
     def process_queue():
-        def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject]):
+        def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject | DeforumObject]):
             queue_object = target_queue.pop(0)
             queue_object.cog.dream(GlobalQueue.event_loop, queue_object)
 
