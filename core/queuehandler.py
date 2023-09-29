@@ -81,7 +81,7 @@ class IdentifyObject:
 
 # the queue object for generate
 class GenerateObject:
-    def __init__(self, cog, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty):
+    def __init__(self, cog, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt):
         self.cog = cog
         self.ctx = ctx
         self.prompt = prompt
@@ -90,6 +90,8 @@ class GenerateObject:
         self.temperature = temperature
         self.top_k = top_k
         self.repetition_penalty = repetition_penalty
+        self.current_prompt = current_prompt
+        self.is_done = False
 
 
 # the queue object for posting to Discord
@@ -105,6 +107,10 @@ class PostObject:
 
 # any command that needs to wait on processing should use the dream thread
 class GlobalQueue:
+    # progression lock and prioritys
+    progress_lock = asyncio.Lock()
+    priority_flag = asyncio.Event()
+
     dream_thread = Thread()
     post_event_loop = asyncio.get_event_loop()
     queue: list[DrawObject | UpscaleObject | IdentifyObject| DeforumObject] = []
@@ -175,75 +181,120 @@ class GlobalQueue:
 
     @staticmethod
     async def update_progress_message(queue_object):
-        ctx = getattr(queue_object, "ctx", None)
-        prompt = getattr(queue_object, "prompt", None)
+        async with GlobalQueue.progress_lock:
+            # priority flag
+            GlobalQueue.priority_flag.set()
 
-        try:
-            if "prompts" in queue_object.deforum_settings:
-                prompt = queue_object.deforum_settings["prompts"]
-            else:
-                print("[DEBUG] 'prompts' not found in deforum_settings.")
-        except AttributeError as e:
-            print(f"[ERROR] Error to access deforum_settings: {e}")
+            ctx = getattr(queue_object, "ctx", None)
+            prompt = getattr(queue_object, "prompt", None)
 
-        # check for an existing progression message, if yes delete the previous one
-        async for old_msg in ctx.channel.history(limit=25):
-            if old_msg.embeds:
-                if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                    await old_msg.delete()
+            try:
+                if "prompts" in queue_object.deforum_settings:
+                    prompt = queue_object.deforum_settings["prompts"]
+                else:
+                    print("[DEBUG] 'prompts' not found in deforum_settings.")
+            except AttributeError as e:
+                ...
 
-        # send first message to discord, Initialization
-        embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-        progress_msg = await ctx.send(embed=embed)
+            # check for an existing progression message, if yes delete the previous one
+            async for old_msg in ctx.channel.history(limit=25):
+                if old_msg.embeds:
+                    if old_msg.embeds[0].title == "──── Running Job Progression ────":
+                        await old_msg.delete()
 
-        # progress loop
-        while not queue_object.is_done:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
-                    data = await response.json()
-                    try:
-                        progress = round(data["progress"] * 100)
-                        job = data['state']['job']
+            # send first message to discord, Initialization
+            embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
+            progress_msg = await ctx.send(embed=embed)
 
-                        # parsing the 'job' string to get the current and total number of batches
-                        match = re.search(r'Batch (\d+) out of (\d+)', job)
-                        if match:
-                            current_batch, total_batches = map(int, match.groups())
-                        else:
-                            current_batch, total_batches = 1, 1
+            # progress loop
+            while not queue_object.is_done:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
+                        data = await response.json()
+                        try:
+                            progress = round(data["progress"] * 100)
+                            job = data['state']['job']
 
-                        progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
-                        eta_relative = round(data["eta_relative"])
-                        if prompt:
-                            short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
-                        else:
-                            short_prompt = "Pas de prompt fourni"
-                        sampling_step = data['state']['sampling_step']
-                        sampling_steps = data['state']['sampling_steps']
-                        queue_size = len(GlobalQueue.queue)
+                            # parsing the 'job' string to get the current and total number of batches
+                            match = re.search(r'Batch (\d+) out of (\d+)', job)
+                            if match:
+                                current_batch, total_batches = map(int, match.groups())
+                            else:
+                                current_batch, total_batches = 1, 1
 
-                        # adjust job output to the running task
-                        if job == "scripts_txt2img":
-                            job = "Batch 1 out of 1"
-                        elif job.startswith("task"):
-                            job = "Job running locally by the owner"
+                            progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
+                            eta_relative = round(data["eta_relative"])
+                            if prompt:
+                                short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
+                            else:
+                                short_prompt = "Pas de prompt fourni"
+                            sampling_step = data['state']['sampling_step']
+                            sampling_steps = data['state']['sampling_steps']
+                            queue_size = len(GlobalQueue.queue)
 
-                        # check recent messages and Spam the bottom, like pinned
-                        latest_message = await ctx.channel.history(limit=1).flatten()
-                        latest_message = latest_message[0] if latest_message else None
-                        if latest_message and latest_message.id != progress_msg.id:
-                            await progress_msg.delete()
-                            progress_msg = await ctx.send(embed=embed)
+                            # adjust job output to the running task
+                            if job == "scripts_txt2img":
+                                job = "Batch 1 out of 1"
+                            elif job.startswith("task"):
+                                job = "Job running locally by the owner"
 
-                        # message update
-                        embed = discord.Embed(title=f"──── Running Job Progression ────", 
-                                            description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
-                                            color=discord.Color.random())
-                        await progress_msg.edit(embed=embed)
+                            # check recent messages and Spam the bottom, like pinned
+                            latest_message = await ctx.channel.history(limit=1).flatten()
+                            latest_message = latest_message[0] if latest_message else None
+                            if latest_message and latest_message.id != progress_msg.id:
+                                await progress_msg.delete()
+                                progress_msg = await ctx.send(embed=embed)
 
-                        await asyncio.sleep(1)
-                    except Exception as e:
-                        print(f"[ERROR] Error regarding the server response: {e}")
+                            # message update
+                            embed = discord.Embed(title=f"──── Running Job Progression ────", 
+                                                description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
+                                                color=discord.Color.random())
+                            await progress_msg.edit(embed=embed)
+
+                            await asyncio.sleep(1)
+                        except Exception as e:
+                            print(f"[ERROR] Error regarding the server response: {e}")
+
+            # done, delete, clear priority flag
+            await progress_msg.delete()
+            GlobalQueue.priority_flag.clear()
+
+    async def update_progress_message_generate(instance, queue_object, num_prompts):
+        # wait for the priority flag to end
+        #while GlobalQueue.priority_flag.is_set():
+        #    await asyncio.sleep(1)
+
+        # start only if no lock AND no priority flag. double is better, they said
+        async with GlobalQueue.progress_lock:
+            if not GlobalQueue.priority_flag.is_set():
+                ctx = queue_object.ctx
+
+                # check for an existing progression message, if yes delete the previous one
+                async for old_msg in ctx.channel.history(limit=25):
+                    if old_msg.embeds:
+                        if old_msg.embeds[0].title == "──── Running Job Progression ────":
+                            await old_msg.delete()
+
+                # send first message to discord, Initialization
+                embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
+                progress_msg = await ctx.send(embed=embed)
+
+                # update progress message based on the current prompt being generated
+                while not queue_object.is_done:
+                    description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
+                    description += f"\nCurrently on prompt {queue_object.current_prompt} of {num_prompts}."
+                    embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
+                    await progress_msg.edit(embed=embed)
+
+                    # check if the message has been moved in the chat and move it down if needed
+                    latest_message = await ctx.channel.history(limit=1).flatten()
+                    latest_message = latest_message[0] if latest_message else None
+
+                    if latest_message and latest_message.id != progress_msg.id:
+                        await progress_msg.delete()
+                        progress_msg = await ctx.send(embed=embed)
+                    
+                    await asyncio.sleep(1)
 
         # done, delete
         await progress_msg.delete()
@@ -255,57 +306,6 @@ class GlobalQueue:
 
         if GlobalQueue.queue:
             start(GlobalQueue.queue)
-
-    '''
-    async def update_progress_message_generate(instance, queue_object, num_prompts):
-        ctx = queue_object.ctx
-
-        # check for an existing progression message, if yes delete the previous one
-        async for old_msg in ctx.channel.history(limit=25):
-            if old_msg.embeds:
-                if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                    await old_msg.delete()
-
-        # send first message to discord, Initialization
-        embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-        progress_msg = await ctx.send(embed=embed)
-
-        prompts = []
-        for i in range(num_prompts):
-            res = self.pipe(
-                queue_object.prompt,
-                max_length=max_length,
-                temperature=temperature,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty
-            )
-            generated_text = res[0]['generated_text']
-            prompts.append(generated_text)
-
-            # update the leaderboard
-            LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
-
-            # update progress message
-            description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
-            description += f"\nCurrently on prompt {i+1} of {num_prompts}."
-            embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
-            await progress_msg.edit(embed=embed)
-
-        # check if the message has been moved in the chat and move it down if needed
-        while not queue_object.is_done:
-            latest_message = await ctx.channel.history(limit=1).flatten()
-            latest_message = latest_message[0] if latest_message else None
-
-            if latest_message and latest_message.id != progress_msg.id:
-                await progress_msg.delete()
-                progress_msg = await ctx.send(embed=embed)
-            
-            await asyncio.sleep(0.5)
-
-        # done, delete
-        await progress_msg.delete()
-        '''
-
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
     GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))

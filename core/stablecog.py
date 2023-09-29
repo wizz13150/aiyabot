@@ -412,7 +412,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     # generate the image
     def dream(self, event_loop: queuehandler.GlobalQueue.event_loop, queue_object: queuehandler.DrawObject):
     
-        # Start progression message
+        # start progression message
         run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
 
         try:

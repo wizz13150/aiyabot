@@ -116,9 +116,9 @@ class FaceDetailerButton(Button):
 
 class BatchButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Batch: 1", custom_id="batch", style=1)  # Start with default value of 2
+        super().__init__(label="Batch: 2", custom_id="batch", style=1)
         self.parent_view = parent_view
-        self.batch_values = ['1', '2', '4']
+        self.batch_values = ['2', '4', '1']
         self.current_index = 0
 
     async def callback(self, interaction):
@@ -321,6 +321,7 @@ class GenerateCog(commands.Cog):
                             repetition_penalty: Optional[float]=1.2):
 
         called_from_reroll = getattr(ctx, 'called_from_reroll', False)
+        current_prompt = 0
 
         print(f"/Generate request -- {ctx.author.name}#{ctx.author.discriminator} -- {num_prompts} prompt(s) of {max_length} tokens. Text: {prompt}")
 
@@ -328,7 +329,7 @@ class GenerateCog(commands.Cog):
         if not prompt or prompt.isspace():
             await ctx.send_followup("The prompt cannot be empty or contain only whitespace.")
             return
-    
+
         if not 1 <= num_prompts <= 5:
             await ctx.send_followup("The number of prompts must be between 1 and 5.")
             return
@@ -382,9 +383,9 @@ class GenerateCog(commands.Cog):
 
         # set up the queue
         if queuehandler.GlobalQueue.generate_thread.is_alive():
-            queuehandler.GlobalQueue.generate_queue.append(queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
+            queuehandler.GlobalQueue.generate_queue.append(queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt))
         else:
-            await queuehandler.process_generate(self, queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
+            await queuehandler.process_generate(self, queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt))
         
         if called_from_reroll:
             await ctx.channel.send(response_message)
@@ -401,16 +402,16 @@ class GenerateCog(commands.Cog):
         )
         if queuehandler.GlobalQueue.post_queue:
             self.post(event_loop, queuehandler.GlobalQueue.post_queue.pop(0))
-    
+
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float):
 
         # start the progression message task
-        #event_loop.create_task(GlobalQueue.update_progress_message_generate(self, queue_object, num_prompts))
+        event_loop.create_task(GlobalQueue.update_progress_message_generate(self, queue_object, num_prompts))
 
         try:
             # generate the text
             prompts = []
-            for _ in range(num_prompts):
+            for i in range(num_prompts):
                 res = self.pipe(
                     queue_object.prompt,
                     max_length=max_length,
@@ -421,14 +422,14 @@ class GenerateCog(commands.Cog):
                 generated_text = res[0]['generated_text']
                 prompts.append(generated_text)
 
+                # Inform the progress function about the current prompt number
+                queue_object.current_prompt = i + 2
+
                 # update the leaderboard
                 LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
 
-                # Inform the progress function about the current prompt number
-                #queue_object.current_prompt = i + 1
-
             # progression flag, job done
-            #queue_object.is_done = True
+            queue_object.is_done = True
 
             # Schedule the task to create the view and send the message
             event_loop.create_task(self.send_with_view(prompts, queue_object.ctx, queue_object.prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
@@ -442,7 +443,7 @@ class GenerateCog(commands.Cog):
             event_loop.create_task(queuehandler.process_generate(self, queuehandler.GlobalQueue.generate_queue.pop(0)))
 
     async def send_with_view(self, prompts, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty):
-        
+
         # create embed
         title = "What about this as Prompt?!" if len(prompts) == 1 else "What about these as Prompts?!"
         numbered_prompts = [f"**Prompt {i+1}:**\n{prompt}" for i, prompt in enumerate(prompts)]
