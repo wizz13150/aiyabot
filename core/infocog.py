@@ -255,7 +255,6 @@ class InfoView(View):
         embed_tips1.add_field(name="image-to-image",
                               value="Use the /draw command for this, **init_img** option for an attachment or **init_url** for a link."
                                                            "\nNote that **strength** interacts with img2img. The range is 0.0 to 1.0, with higher values having more effect on the image.")
-        embed_tips1.add_field(name="\u200B", value="\u200B")
         embed_tips1.add_field(name="/generate command",
                               value="Generates a prompt from text. This is the best command, for sure. Generate prompts from a few words, and Draw from them. The option **num_prompts** allows to choose the number of prompts to produce (1-5).")
         embed_tips1.add_field(name="/identify command",

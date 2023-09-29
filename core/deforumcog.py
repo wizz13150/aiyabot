@@ -17,6 +17,7 @@ from core import settings
 from core import queuehandler
 from core import viewhandler
 from core.queuehandler import GlobalQueue
+from core.leaderboardcog import LeaderboardCog
 
 
 class DeleteButton(Button):
@@ -433,6 +434,9 @@ class DeforumCog(commands.Cog):
         except Exception as e:
             embed = discord.Embed(title='Generation failed', description=f'{e}\n{traceback.print_exc()}', color=0x00ff00)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+
+        # update the leaderboard
+        LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Deforum_Count")
 
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
