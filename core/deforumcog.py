@@ -175,9 +175,14 @@ class DeforumCog(commands.Cog):
                         frame_num = frame_num_match.group(1)
             elif char == ")":
                 stack.pop()
-                if not stack:  # Stack is empty
-                    frames[frame_num] = string[start_idx:i].strip()
-                    frame_num = None
+                if not stack:  # stack is empty
+                    content = string[start_idx:i].strip()
+                    # if no frame number but content exists, default to frame 0
+                    if frame_num is None and content:
+                        frames['0'] = content
+                    elif frame_num:
+                        frames[frame_num] = content
+                        frame_num = None
             i += 1
 
         return frames

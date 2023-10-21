@@ -42,6 +42,7 @@ class DeforumObject:
         self.cog = cog
         self.ctx = ctx
         self.deforum_settings = deforum_settings
+        self.prompt = deforum_settings["prompts"]
         self.view = view
         self.is_done = False
 
@@ -138,8 +139,7 @@ class GlobalQueue:
                 if isinstance(item, DrawObject):
                     item_info += f" - Prompt: {item.prompt[:30] + '...' if len(item.prompt) > 30 else item.prompt}"
                 elif isinstance(item, DeforumObject):
-                    first_prompt = item.deforum_settings["Prompts"][0] if item.deforum_settings["Prompts"] else ""
-                    item_info += f" - `{first_prompt[:30] + '...`' if len(first_prompt) > 30 else first_prompt}"
+                    item_info += f" - Prompt: {item.prompt[:30] + '...' if len(item.prompt) > 30 else item.prompt}"
                 general_queue_info.append(item_info)
             output["\n**General Queue next items**"] = "".join(general_queue_info)
 
@@ -186,7 +186,7 @@ class GlobalQueue:
                 if "prompts" in queue_object.deforum_settings:
                     prompt = queue_object.deforum_settings["prompts"]
                 else:
-                    print("[DEBUG] 'prompts' not found in deforum_settings.")
+                    print("[DEBUG] 'Prompts' not found in deforum_settings.")
             except AttributeError as e:
                 ...
 
@@ -221,7 +221,7 @@ class GlobalQueue:
                             if prompt:
                                 short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
                             else:
-                                short_prompt = "Pas de prompt fourni"
+                                short_prompt = "No prompt"
                             sampling_step = data['state']['sampling_step']
                             sampling_steps = data['state']['sampling_steps']
                             queue_size = len(GlobalQueue.queue)
