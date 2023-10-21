@@ -35,9 +35,6 @@ class DrawObject:
         self.view = view
         self.is_done = False
 
-    #def get_prompt(self):
-    #    return self.prompt
-
 
 # the queue object for Deforum command
 class DeforumObject:
@@ -47,9 +44,6 @@ class DeforumObject:
         self.deforum_settings = deforum_settings
         self.view = view
         self.is_done = False
-
-    #def get_prompt(self):
-    #    return self.deforum_settings["Prompts"]
 
 
 # the queue object for extras - upscale
@@ -251,7 +245,7 @@ class GlobalQueue:
                                                 color=discord.Color.random())
                             await progress_msg.edit(embed=embed)
 
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(2)
                         except Exception as e:
                             print(f"[ERROR] Error regarding the server response: {e}")
 
@@ -261,13 +255,14 @@ class GlobalQueue:
 
     async def update_progress_message_generate(instance, queue_object, num_prompts):
         # wait for the priority flag to end
-        #while GlobalQueue.priority_flag.is_set():
-        #    await asyncio.sleep(1)
+        while GlobalQueue.priority_flag.is_set():
+            await asyncio.sleep(1)
 
         # start only if no lock AND no priority flag. double is better, they said
         async with GlobalQueue.progress_lock:
             if not GlobalQueue.priority_flag.is_set():
                 ctx = queue_object.ctx
+                prompt = queue_object.prompt
 
                 # check for an existing progression message, if yes delete the previous one
                 async for old_msg in ctx.channel.history(limit=25):
@@ -281,8 +276,9 @@ class GlobalQueue:
 
                 # update progress message based on the current prompt being generated
                 while not queue_object.is_done:
+                    queue_size = len(GlobalQueue.generate_queue)
                     description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
-                    description += f"\nCurrently on prompt {queue_object.current_prompt} of {num_prompts}."
+                    description += f"\n**Prompt**: {prompt}\n🔍**Current Prompt**: {queue_object.current_prompt} of {num_prompts}\n👥 **Queued Jobs**: {queue_size}"
                     embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
                     await progress_msg.edit(embed=embed)
 
@@ -294,7 +290,7 @@ class GlobalQueue:
                         await progress_msg.delete()
                         progress_msg = await ctx.send(embed=embed)
                     
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
 
         # done, delete
         await progress_msg.delete()

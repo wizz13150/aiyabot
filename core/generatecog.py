@@ -120,6 +120,7 @@ class BatchButton(Button):
         self.parent_view = parent_view
         self.batch_values = ['2', '4', '1']
         self.current_index = 0
+        self.parent_view.batch_value = self.batch_values[self.current_index]
 
     async def callback(self, interaction):
         # Increment the index and loop back to 0 if necessary
@@ -257,7 +258,7 @@ class GenerateView(View):
         self.selected_size = "Medium"
         self.selected_model = "ZavyChromaXL"
         self.adetailer = None
-        self.batch_value = 1
+        self.batch_value = 2
 
     async def interaction_check(self, interaction):
         return True
@@ -313,7 +314,7 @@ class GenerateCog(commands.Cog):
         required=False,
     )
     async def generate_handler(self, ctx: discord.ApplicationContext, *,
-                            prompt: Optional[str],
+                            prompt: str,
                             num_prompts: Optional[int]=1,
                             max_length: Optional[int]=75,
                             temperature: Optional[float]=0.9,

@@ -59,8 +59,7 @@ class DeforumCog(commands.Cog):
             default_content = {
                 "URL": "http://127.0.0.1:7860/deforum_api",
                 "patreon": "https://patreon.com/deforum",
-                "anim_waittime": 10,
-                "true_frames_limit": 100
+                "true_frames_limit": 1000
             }
             with open(filename, 'w') as cfg_file:
                 json.dump(default_content, cfg_file, indent=4)
@@ -134,7 +133,7 @@ class DeforumCog(commands.Cog):
 
     async def check_job_status(self, session, job_id):
         job_status_url = f"{self.config['URL']}/jobs"
-        max_retries = 10
+        max_retries = 30
         retries = 0
         while retries < max_retries:
             try:
@@ -144,37 +143,43 @@ class DeforumCog(commands.Cog):
                         status = data[job_id]['status']
                         return status
                     else:
-                        print(f"Job {job_id} not found. Retrying in 2 seconds...")
-                        await asyncio.sleep(2)
+                        print(f"Job {job_id} not found. Retrying in 1 second...")
+                        await asyncio.sleep(1)
                         retries += 1
 
             except aiohttp.client_exceptions.ClientOSError:
-                print("Network error encountered. Retrying in2 seconds...")
-                await asyncio.sleep(2)
+                #print("Network error encountered. Retrying in 1 seconds...")
+                await asyncio.sleep(1)
                 retries += 1
 
-        print(f"Failed to get job status after {max_retries} attempts.")
+        print(f"Failed to get job status after {max_retries} seconds.")
         return "ERROR"
 
     def parse_prompts(self, string, filename='unknown'):
         frames = dict()
+        stack = []
+        start_idx = None
+        frame_num = None
 
-        # Check if the string is a simple prompt without frame number
-        if ":" not in string:
-            frames["0"] = string.strip()
-            return frames
+        i = 0
+        while i < len(string):
+            char = string[i]
+            if char == "(":
+                stack.append(char)
+                if len(stack) == 1:
+                    # new content
+                    start_idx = i + 1
+                    # extract the frame number
+                    frame_num_match = re.search(r'(\d+)\s*:', string[max(0, i-15):i])
+                    if frame_num_match:
+                        frame_num = frame_num_match.group(1)
+            elif char == ")":
+                stack.pop()
+                if not stack:  # Stack is empty
+                    frames[frame_num] = string[start_idx:i].strip()
+                    frame_num = None
+            i += 1
 
-        for match_object in re.split(r'\)\s*,', string):
-            frameParam = re.split(r':\s*\(', match_object)
-            try:
-                frame = frameParam[0].strip()
-                frames[frame] = frameParam[1].strip()
-            except SyntaxError as e:
-                e.filename = filename
-                raise e
-        if frames == {} and len(string) != 0:
-            traceback.print_exc()
-            raise RuntimeError('Key Frame string not correctly formatted')
         return frames
 
     def find_animation(self, d):
@@ -196,26 +201,26 @@ class DeforumCog(commands.Cog):
         return val
 
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
-    @option('prompts', str, description='The prompts to generate the animation.', required=True)
+    @option('prompts', str, description='The prompts to generate the animation.', required=True,)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
-    @option('steps', int, description='The steps for the animation. (default=25)', required=False, default=25)
+    @option('steps', int, description='The steps for the animation. (default=30)', required=False, default=30)
     @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
     @option('translation_x', str, description='The X translation to move the canvas left/right in pixels per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('translation_y', str, description='The Y translation to move the canvas up/down in pixels per frame.(default="0:(0)"))', required=False, default="0:(0)")
-    @option('translation_z', str, description='The Z translation to move the canvas towards/away from view [speed based on fov].(default="0:(1)"))', required=False, default="0:(1)")
+    @option('translation_z', str, description='The Z translation to move the canvas towards/away. [speed based on fov].(default="0:(0.5)"))', required=False, default="0:(0.5)")
     @option('rotation_3d_x', str, description='The 3D X rotation to tilt the canvas up/down in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_y', str, description='The 3D Y rotation to pan the canvas left/right in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_z', str, description='The 3D Z rotation to roll the canvas clockwise/ anticlockwise. (default="0:(0)"))', required=False, default="0:(0)")
     @option('width', int, description='The width for the animation. (default=832))', required=False, default=832)
     @option('height', int, description='The height for the animation. (default=1216))', required=False, default=1216)
     @option('fps', int, description='The FPS for the animation. (default=15))', required=False, default=15)
-    @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
-    @option('fov_schedule', str, description='Adjust the FOV. (default="0:(120)"))', required=False, default="0:(120)")
-    @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0.065)"))', required=False, default="0:(0.065)")
-    @option('noise_multiplier_schedule', str, description='Adjust the Noise Multiplier Schedule. (default="0:(1.05)"))', required=False, default="0:(1.05)")
-    @option('strength_schedule', str, description='Adjust the Strength Schedule. (default="0:(0.65)"))', required=False, default="0:(0.65)")
-    @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(7)"))', required=False, default="0:(7)")
-    @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.1)"))', required=False, default="0:(0.1)")
+    @option('max_frames', int, description='The total frames for the animation. (default=10))', required=False, default=120)
+    @option('fov_schedule', str, description='Adjust the FOV. (default="0:(140)"))', required=False, default="0:(140)")
+    @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0)"))', required=False, default="0:(0)")
+    @option('noise_multiplier_schedule', str, description='Adjust the Noise Multiplier Schedule. (default="0:(1.06)"))', required=False, default="0:(1.06)")
+    @option('strength_schedule', str, description='Adjust the Strength Schedule. (default="0:(0.7)"))', required=False, default="0:(0.7)")
+    @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(9)"))', required=False, default="0:(9)")
+    @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.25)"))', required=False, default="0:(0.25)")
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
     @option('frame_interpolation_engine', str, description='Enable the frame interpolation engine. Triples video generation time. (default="None", x3 FPS)', required=False, default="None", choices=["None", "FILM"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
@@ -223,13 +228,13 @@ class DeforumCog(commands.Cog):
     async def deforum_handler(
         self,
         ctx,
-        prompts: str = "",
+        prompts: str,
         cadence: Optional[int] = 5,
-        steps: Optional[int] = 25,
+        steps: Optional[int] = 30,
         seed: Optional[int] = -1,
         translation_x: Optional[str] = "0:(0)",
         translation_y: Optional[str] = "0:(0)",
-        translation_z: Optional[str] = "0:(1)",
+        translation_z: Optional[str] = "0:(0.5)",
         rotation_3d_x: Optional[str] = "0:(0)",
         rotation_3d_y: Optional[str] = "0:(0)",
         rotation_3d_z: Optional[str] = "0:(0)",
@@ -237,12 +242,12 @@ class DeforumCog(commands.Cog):
         height: Optional[int] = 1216,
         fps: Optional[int] = 15,
         max_frames: Optional[int] = 120,
-        fov_schedule: Optional[str] = "0:(120)",
-        noise_schedule: Optional[str] = "0:(0.065)",
-        noise_multiplier_schedule: Optional[str] = "0:(1.05)",
-        strength_schedule: Optional[str] = "0:(0.65)",
-        cfg_scale_schedule: Optional[str] = "0:(7)",
-        antiblur_amount_schedule: Optional[str] = "0:(0.1)",
+        fov_schedule: Optional[str] = "0:(140)",
+        noise_schedule: Optional[str] = "0:(0)",
+        noise_multiplier_schedule: Optional[str] = "0:(1.06)",
+        strength_schedule: Optional[str] = "0:(0.7)",
+        cfg_scale_schedule: Optional[str] = "0:(9)",
+        antiblur_amount_schedule: Optional[str] = "0:(0.25)",
         #add_soundtrack: discord.Attachment = None,
         frame_interpolation_engine: Optional[str] = "None",
         parseq_manifest: Optional[str] = ""
@@ -257,7 +262,7 @@ class DeforumCog(commands.Cog):
             "seed": "",
             "translation_x": "0:(0)",
             "translation_y": "0:(0)",
-            "translation_z": "0:(1)",
+            "translation_z": "0:(0.5)",
             "rotation_3d_x": "0:(0)",
             "rotation_3d_y": "0:(0)",
             "rotation_3d_z": "0:(0)",
@@ -265,12 +270,12 @@ class DeforumCog(commands.Cog):
             "height": 1216,
             "fps": 15,
             "max_frames": 120,
-            "fov_schedule": "0:(120)",
-            "noise_schedule": "0:(0.065)",
-            "noise_multiplier_schedule": "0:(1.05)",
-            "strength_schedule": "0:(0.65)",
-            "cfg_scale_schedule": "0:(7)",
-            "antiblur_amount_schedule": "0:(0.1)",
+            "fov_schedule": "0:(140)",
+            "noise_schedule": "0:(0)",
+            "noise_multiplier_schedule": "0:(1.06)",
+            "strength_schedule": "0:(0.7)",
+            "cfg_scale_schedule": "0:(9)",
+            "antiblur_amount_schedule": "0:(0.25)",
             "frame_interpolation_engine": "None",
             #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": ""
@@ -307,8 +312,8 @@ class DeforumCog(commands.Cog):
         with open('default_settings.json', 'r') as settings_file:
             deforum_settings = json.load(settings_file)
 
-        if cadence < 0 or width  > 1216 or height  > 1216 or fps < 1 or max_frames < 1:
-            await ctx.respond(f"<@{ctx.author.id}> Cadence must be greater than 2, width and height can't be larger than 1024 and fps not less than 1")
+        if cadence < 1 or width  > 1536 or height  > 1536 or fps < 1 or max_frames < 1:
+            await ctx.respond(f"<@{ctx.author.id}> Cadence must be greater than 0, width and height can't be larger than 1536 max frames greater than 1 and fps not less than 1")
             return
         if max_frames / cadence > self.config['true_frames_limit']:
             await ctx.respond(f"<@{ctx.author.id}> With Cadence {cadence} the length of the animation is limited by {cadence * self.config['true_frames_limit']} frames")
@@ -335,9 +340,10 @@ class DeforumCog(commands.Cog):
         deforum_settings['amount_schedule'] = self.wrap_value(antiblur_amount_schedule)
 
         # addfixed params to deforum_settings
-        deforum_settings['sampler'] = "DPM++ 2M Karras"
+        deforum_settings['sampler'] = "Euler a"
         deforum_settings['motion_preview_mode'] = False # fixed for now
-        deforum_settings['animation_mode'] = "3D"
+        deforum_settings['animation_mode'] = "3D"        
+        deforum_settings['depth_algorithm'] = "Leres"
         deforum_settings['border'] = "wrap"
         deforum_settings['padding_mode'] = "reflection"
 
@@ -461,7 +467,7 @@ class DeforumCog(commands.Cog):
             view = DeforumView(ctx, None, queue_object)
 
             message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
-            #message = await ctx.send(f'<@{ctx.author.id}> Your animation is done! Seed used: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
+            message = await ctx.send(f'<@{ctx.author.id}> Animation Seed: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
             view.message = message
 
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))

@@ -427,6 +427,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             if "zavyyumexl" in queue_object.data_model.lower():
                 style_to_use = "Yume Style"
                 queue_object.negative_prompt = ""
+                queue_object.sampler = "Euler a"
 
             payload = {
                 "prompt": queue_object.prompt,
@@ -541,7 +542,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             s = settings.authenticate_user()
 
             if queue_object.data_model != '':
-                s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
+                try:
+                    s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
+                except requests.exceptions.ConnectionError:
+                    print("Connection error. No response from API. (StableCog l.547)")
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
             else:
