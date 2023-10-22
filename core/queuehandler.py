@@ -135,11 +135,12 @@ class GlobalQueue:
         if GlobalQueue.queue:
             general_queue_info = []
             for index, item in enumerate(GlobalQueue.queue[:5], start=1):
-                item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"  # Utilisation du mapping
+                item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"
                 if isinstance(item, DrawObject):
-                    item_info += f" - Prompt: {item.prompt[:30] + '...' if len(item.prompt) > 30 else item.prompt}"
+                    item_info += f" - Prompt: {item.prompt[:100] + '...' if len(item.prompt) > 100 else item.prompt}"
                 elif isinstance(item, DeforumObject):
-                    item_info += f" - Prompt: {item.prompt[:30] + '...' if len(item.prompt) > 30 else item.prompt}"
+                    deforum_prompt = str(item.prompt)
+                    item_info += f" - Prompt: {deforum_prompt[:100] + '...' if len(item.prompt) > 100 else item.prompt}"
                 general_queue_info.append(item_info)
             output["\n**General Queue next items**"] = "".join(general_queue_info)
 
@@ -174,6 +175,18 @@ class GlobalQueue:
         return f"`[{''.join(bar)}]`"
 
     @staticmethod
+    async def handle_rate_limit(response, default_sleep=2):
+        """
+        Handle the rate limit by checking the response's status and headers.
+        Sleeps for the duration specified by the Retry-After header if rate-limited.
+        """
+        if response.status == 429:
+            retry_after = float(response.headers.get("Retry-After", default_sleep))
+            await asyncio.sleep(retry_after)
+            return True
+        return False
+
+    @staticmethod
     async def update_progress_message(queue_object):
         async with GlobalQueue.progress_lock:
             # priority flag
@@ -184,7 +197,8 @@ class GlobalQueue:
 
             try:
                 if "prompts" in queue_object.deforum_settings:
-                    prompt = queue_object.deforum_settings["prompts"]
+                    prompt_value = queue_object.deforum_settings["prompts"]
+                    prompt = str(prompt_value)
                 else:
                     print("[DEBUG] 'Prompts' not found in deforum_settings.")
             except AttributeError as e:
@@ -204,6 +218,11 @@ class GlobalQueue:
             while not queue_object.is_done:
                 async with aiohttp.ClientSession() as session:
                     async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
+                        
+                        # Handle potential rate limit by Discord
+                        if await GlobalQueue.handle_rate_limit(response):
+                            continue
+
                         data = await response.json()
                         try:
                             progress = round(data["progress"] * 100)
@@ -245,7 +264,14 @@ class GlobalQueue:
                                                 color=discord.Color.random())
                             await progress_msg.edit(embed=embed)
 
-                            await asyncio.sleep(2)
+                            # wait 2 or 5 to not be rate limited by discord
+                            if isinstance(queue_object, DrawObject):
+                                await asyncio.sleep(2)
+                            elif isinstance(queue_object, DeforumObject):
+                                await asyncio.sleep(5)
+                            else:
+                                await asyncio.sleep(2)
+
                         except Exception as e:
                             print(f"[ERROR] Error regarding the server response: {e}")
 
@@ -280,7 +306,10 @@ class GlobalQueue:
                     description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
                     description += f"\n**Prompt**: {prompt}\n🔍**Current Prompt**: {queue_object.current_prompt} of {num_prompts}\n👥 **Queued Jobs**: {queue_size}"
                     embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
-                    await progress_msg.edit(embed=embed)
+                    
+                    # handle potential rate limit by Discord for editing the message
+                    if await GlobalQueue.handle_rate_limit(await progress_msg.edit(embed=embed)):
+                        continue
 
                     # check if the message has been moved in the chat and move it down if needed
                     latest_message = await ctx.channel.history(limit=1).flatten()
