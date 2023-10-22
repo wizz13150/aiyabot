@@ -175,15 +175,16 @@ class DeforumCog(commands.Cog):
                         frame_num = frame_num_match.group(1)
             elif char == ")":
                 stack.pop()
-                if not stack:  # stack is empty
+                if not stack:
                     content = string[start_idx:i].strip()
-                    # if no frame number but content exists, default to frame 0
-                    if frame_num is None and content:
-                        frames['0'] = content
-                    elif frame_num:
+                    if frame_num:
                         frames[frame_num] = content
                         frame_num = None
             i += 1
+
+        # if the string was not parsed (no parentheses detected), assume it's for frame 0
+        if not frames:
+            frames['0'] = string.strip()
 
         return frames
 
@@ -483,7 +484,7 @@ class DeforumCog(commands.Cog):
             # create view
             view = DeforumView(ctx, None, queue_object)
 
-           # send the animation with the view attached
+            # send the animation with the view attached
             message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
             view.message = message
 
@@ -492,7 +493,15 @@ class DeforumCog(commands.Cog):
             if queue_object.deforum_settings.get('make_gif'):
                 files_to_send.append(discord.File(gif_file))
 
-            await ctx.send(f'<@{ctx.author.id}> Additional files for the Animation with the Seed: {result_seed}', files=files_to_send)
+            # adjust the message
+            if len(files_to_send) > 1:
+                file_message = f'<@{ctx.author.id}> Additional files for the Animation with the Seed: {result_seed}'
+            else:
+                file_message = f'<@{ctx.author.id}> Additional file for the Animation with the Seed: {result_seed}'
+
+            # add the view to this message as well
+            await ctx.send(file_message, files=files_to_send, view=view)
+
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
 
         else:
