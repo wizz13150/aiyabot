@@ -198,6 +198,12 @@ class DeforumCog(commands.Cog):
             if f.endswith('.txt'):
                 return os.path.join(d, f)
         return ''
+    
+    def find_gif(self, d):
+        for f in os.listdir(d):
+            if f.endswith('.gif'):
+                return os.path.join(d, f)
+        return ''
 
     def wrap_value(self, val:str):
         val = val.strip()
@@ -229,6 +235,7 @@ class DeforumCog(commands.Cog):
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
     @option('frame_interpolation_engine', str, description='Enable the frame interpolation engine. Triples video generation time. (default="None", x3 FPS)', required=False, default="None", choices=["None", "FILM"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
+    @option('make_gif', bool, description='Produce a GIF version of the animation.', required=False, default=False)
 
     async def deforum_handler(
         self,
@@ -255,7 +262,8 @@ class DeforumCog(commands.Cog):
         antiblur_amount_schedule: Optional[str] = "0:(0.25)",
         #add_soundtrack: discord.Attachment = None,
         frame_interpolation_engine: Optional[str] = "None",
-        parseq_manifest: Optional[str] = ""
+        parseq_manifest: Optional[str] = "",
+        make_gif: Optional[bool] = False
     ):
         print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
@@ -283,7 +291,8 @@ class DeforumCog(commands.Cog):
             "antiblur_amount_schedule": "0:(0.25)",
             "frame_interpolation_engine": "None",
             #"add_soundtrack": discord.Attachment = None,
-            "parseq_manifest": ""
+            "parseq_manifest": "",
+            "make_gif": False
         }
 
         # mapping dic for display names 
@@ -310,7 +319,8 @@ class DeforumCog(commands.Cog):
             "antiblur_amount_schedule": "Antiblur Amount Schedule",
             "frame_interpolation_engine": "Frame Interpolation Engine",
             #"add_soundtrack": discord.Attachment = None,
-            "parseq_manifest": "Parseq Manifest"
+            "parseq_manifest": "Parseq Manifest",
+            "make_gif": "Make GIF"
         }
 
         # load the default settings from the file
@@ -344,7 +354,7 @@ class DeforumCog(commands.Cog):
         deforum_settings['cfg_scale_schedule'] = self.wrap_value(cfg_scale_schedule)
         deforum_settings['amount_schedule'] = self.wrap_value(antiblur_amount_schedule)
 
-        # addfixed params to deforum_settings
+        # add fixed params to deforum_settings
         deforum_settings['sampler'] = "Euler a"
         deforum_settings['motion_preview_mode'] = False # fixed for now
         deforum_settings['animation_mode'] = "3D"        
@@ -366,6 +376,7 @@ class DeforumCog(commands.Cog):
         deforum_settings['max_frames'] = max_frames
         deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
         deforum_settings['parseq_manifest'] = parseq_manifest
+        deforum_settings['make_gif'] = make_gif
 
         try:
             prompts = self.parse_prompts(prompts)
@@ -460,6 +471,7 @@ class DeforumCog(commands.Cog):
             print('Animation made.')
             anim_file = self.find_animation(os.path.abspath(path))
             settings_file = self.find_settings(os.path.abspath(path))
+            gif_file = self.find_gif(os.path.abspath(path))
             result_seed = -1
             try:
                 with open(settings_file, 'r', encoding='utf-8') as sttn:
@@ -471,11 +483,18 @@ class DeforumCog(commands.Cog):
             # create view
             view = DeforumView(ctx, None, queue_object)
 
+           # send the animation with the view attached
             message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
-            message = await ctx.send(f'<@{ctx.author.id}> Animation Seed: {result_seed}', file=discord.File(settings_file)) # feature for selected users?
             view.message = message
 
+            # send the video settings. If make_gif is true, attach the GIF
+            files_to_send = [discord.File(settings_file)]
+            if queue_object.deforum_settings.get('make_gif'):
+                files_to_send.append(discord.File(gif_file))
+
+            await ctx.send(f'<@{ctx.author.id}> Additional files for the Animation with the Seed: {result_seed}', files=files_to_send)
             #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
+
         else:
             await ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')
 
