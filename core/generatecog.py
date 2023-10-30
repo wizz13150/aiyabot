@@ -15,102 +15,83 @@ from core.stablecog import StableCog
 from core.leaderboardcog import LeaderboardCog
 
 
-class PortraitButton(Button):
+class RatioButton(Button):
+    FORMATS = [
+        "Fullscreen: 4:3 - 1152x896",
+        "Widescreen: 16:9 - 1344x768",
+        "Ultrawide: 21:9 - 1536x640",
+        "Landscape: 3:2 - 1280x768",
+        "Square: 1:1 - 1024x1024",
+        "Portrait: 2:3 - 768x1280",
+        "Tall: 9:16 - 768x1344"
+    ]
+    
     def __init__(self, parent_view):
-        super().__init__(label="Portrait", custom_id="portrait", emoji="🖼️", style=1)  # Use 1 for primary color
+        super().__init__(label=self.FORMATS[0], custom_id="ratio", emoji="🔄", style=1)
         self.parent_view = parent_view
+        self.parent_view.selected_format = self.FORMATS[0]
+        self.current_index = 0
 
     async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, LandscapeButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_orientation = "Portrait"
+        # Avancez à l'index suivant
+        self.current_index = (self.current_index + 1) % len(self.FORMATS)
+        self.label = self.FORMATS[self.current_index]
+        self.parent_view.selected_format = self.label
         await interaction.response.edit_message(view=self.parent_view)
 
 
-class LandscapeButton(Button):
+class ModelButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Landscape", custom_id="landscape", emoji="🌅", style=1)
+        super().__init__(label="ZavyChromaXL", custom_id="model", emoji="✨", style=1)  # Initial label set to "ZavyChromaXL"
         self.parent_view = parent_view
+        self.parent_view.selected_model = "ZavyChromaXL"  # Initial model set to "ZavyChromaXL"
 
     async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, PortraitButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_orientation = "Landscape"
+        if self.label == "ZavyChromaXL":
+            self.label = "ZavyYumeXL"
+            self.parent_view.selected_model = "ZavyYumeXL"
+        else:
+            self.label = "ZavyChromaXL"
+            self.parent_view.selected_model = "ZavyChromaXL"
         await interaction.response.edit_message(view=self.parent_view)
 
 
-class NormalButton(Button):
+class ADetailerButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Normal", custom_id="normal", emoji="🔳", style=1)
+        super().__init__(label="ADetailer", custom_id="adetailer", emoji="🎭", style=1)
         self.parent_view = parent_view
+        self.choices = ["None", "Faces", "Hands", "Faces+Hands"]
+        self.current_choice_index = 0  # Default is 'None'
 
     async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, BigButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_size = "Medium"
+        # Change the current choice
+        self.current_choice_index = (self.current_choice_index + 1) % len(self.choices)
+        current_choice = self.choices[self.current_choice_index]
+        
+        # Update the button's label and style based on the current choice
+        if current_choice == "None":
+            self.label = "ADetailer"
+            self.style = 1  # Default color
+        else:
+            self.label = f"ADetailer {current_choice}"
+            self.style = 3  # Green
+
+        self.parent_view.adetailer = current_choice if current_choice != "None" else None
         await interaction.response.edit_message(view=self.parent_view)
 
 
-class BigButton(Button):
+class HighResButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="Big", custom_id="big", emoji="⬛", style=1)
-        self.parent_view = parent_view
-
-    async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, NormalButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_size = "Big"
-        await interaction.response.edit_message(view=self.parent_view)
-
-
-class ChromaButton(Button):
-    def __init__(self, parent_view):
-        super().__init__(label="ZavyChromaXL", custom_id="chroma", emoji="✨", style=1)
-        self.parent_view = parent_view
-
-    async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, YumeButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_model = "ZavyChromaXL"
-        await interaction.response.edit_message(view=self.parent_view)
-
-
-class YumeButton(Button):
-    def __init__(self, parent_view):
-        super().__init__(label="ZavyYumeXL", custom_id="yume", emoji="🌟", style=1)
-        self.parent_view = parent_view
-
-    async def callback(self, interaction):
-        self.style = 3  # Set this button to green
-        for item in self.parent_view.children:
-            if isinstance(item, ChromaButton):
-                item.style = 1  # Set the other button to default color
-        self.parent_view.selected_model = "ZavyYumeXL"
-        await interaction.response.edit_message(view=self.parent_view)
-
-
-class FaceDetailerButton(Button):
-    def __init__(self, parent_view):
-        super().__init__(label="Face Details", custom_id="adetailer", emoji="🎭", style=1)
+        super().__init__(label="HighResFix", custom_id="highres", emoji="🔍", style=1)
         self.parent_view = parent_view
 
     async def callback(self, interaction):
         if self.style == 1:  # Default color
             self.style = 3  # Set this button to green
-            self.parent_view.adetailer = "Faces"
+            self.parent_view.hires = "4x-UltraMix_Balanced"
         else:
             self.style = 1  # Set the button to default color
-            self.parent_view.adetailer = None
+            self.parent_view.hires = None
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -118,13 +99,13 @@ class BatchButton(Button):
     def __init__(self, parent_view):
         super().__init__(label="Batch: 2", custom_id="batch", style=1)
         self.parent_view = parent_view
-        self.batch_values = ['2', '4', '1']
+        self.batch_values = ['2', '4', '9', '1']
         self.current_index = 0
         self.parent_view.batch_value = self.batch_values[self.current_index]
 
     async def callback(self, interaction):
         # Increment the index and loop back to 0 if necessary
-        self.current_index = (self.current_index + 1) % 3
+        self.current_index = (self.current_index + 1) % 4
         self.label = f"Batch: {self.batch_values[self.current_index]}"
         self.parent_view.batch_value = self.batch_values[self.current_index]
         await interaction.response.edit_message(view=self.parent_view)
@@ -141,17 +122,9 @@ class PromptButton(Button):
     async def callback(self, interaction):
         try:
             await interaction.response.defer()
-
+            
             # ratio user choice
-            size_ratio = None
-            if self.parent_view.selected_orientation == "Portrait" and self.parent_view.selected_size == "Medium":
-                size_ratio = "Portrait_Medium (832x1216)"
-            elif self.parent_view.selected_orientation == "Portrait" and self.parent_view.selected_size == "Big":
-                size_ratio = "Portrait_Big (1024x1536)"
-            elif self.parent_view.selected_orientation == "Landscape" and self.parent_view.selected_size == "Medium":
-                size_ratio = "Landscape_Medium (1216x832)"
-            elif self.parent_view.selected_orientation == "Landscape" and self.parent_view.selected_size == "Big":
-                size_ratio =  "Landscape_Big (1536x1024)"
+            size_ratio = self.parent_view.selected_format
 
             # model user choice
             model_choice = self.parent_view.selected_model
@@ -159,14 +132,20 @@ class PromptButton(Button):
             # adetailer user choice
             adetailer_choice = self.parent_view.adetailer
 
+            # highres fix choice
+            highres_choice = self.parent_view.hires
+
             # batch user choice
             batch_choice = str(self.parent_view.batch_value)
 
             prompt_index = int(self.custom_id.split("_")[1])
             prompt = self.parent_view.prompts[prompt_index]
             self.parent_view.ctx.called_from_button = True
-            await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt, size_ratio=size_ratio, 
-                                          data_model=model_choice, adetailer=adetailer_choice,
+            await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt,
+                                          size_ratio=size_ratio, 
+                                          data_model=model_choice,
+                                          adetailer=adetailer_choice,
+                                          highres_fix=highres_choice,
                                           batch=batch_choice)
             await interaction.edit_original_response(view=self.parent_view)
         except Exception as e:
@@ -244,19 +223,16 @@ class GenerateView(View):
             self.add_item(button)
         self.add_item(RerollButton(parent_view=self))
         self.add_item(DeleteButton(parent_view=self))
-        self.add_item(PortraitButton(parent_view=self))
-        self.add_item(LandscapeButton(parent_view=self))
-        self.add_item(NormalButton(parent_view=self))
-        self.add_item(BigButton(parent_view=self))
-        self.add_item(ChromaButton(parent_view=self))
-        self.add_item(YumeButton(parent_view=self))
-        self.add_item(FaceDetailerButton(parent_view=self))
+        self.add_item(RatioButton(parent_view=self))
+        self.add_item(ModelButton(parent_view=self))
+        self.add_item(ADetailerButton(parent_view=self))
+        self.add_item(HighResButton(parent_view=self))
         self.add_item(BatchButton(parent_view=self))
 
         # Attributes to store the selected orientation and size
-        self.selected_orientation = "Portrait"
-        self.selected_size = "Medium"
+        self.selected_orientation = "Portrait: 2:3 - 768x1280"
         self.selected_model = "ZavyChromaXL"
+        self.hires = None
         self.adetailer = None
         self.batch_value = 2
 
@@ -407,7 +383,7 @@ class GenerateCog(commands.Cog):
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float):
 
         # start the progression message task
-        event_loop.create_task(GlobalQueue.update_progress_message_generate(self, queue_object, num_prompts))
+        #event_loop.create_task(GlobalQueue.update_progress_message_generate(self, queue_object, num_prompts))
 
         try:
             # generate the text
@@ -430,7 +406,7 @@ class GenerateCog(commands.Cog):
                 LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
 
             # progression flag, job done
-            queue_object.is_done = True
+            #queue_object.is_done = True
 
             # Schedule the task to create the view and send the message
             event_loop.create_task(self.send_with_view(prompts, queue_object.ctx, queue_object.prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))

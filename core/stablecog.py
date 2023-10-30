@@ -21,15 +21,18 @@ from core.queuehandler import GlobalQueue
 from core.leaderboardcog import LeaderboardCog
 
 
+
 # ratios dic
 size_ratios = {
-    "Portrait_Medium (832x1216)": (832, 1216),
-    "Portrait_Big (1024x1536)": (1024, 1536),
-    "Landscape_Medium (1216x832)": (1216, 832),
-    "Landscape_Big (1536x1024)": (1536, 1024),
-    "Square_Medium (1024x1024)": (1024, 1024),
-    "Square_Big (1536x1536)": (1536, 1536)
+    "Fullscreen: 4:3 - 1152x896": (1152, 896),
+    "Widescreen: 16:9 - 1344x768": (1344, 768),
+    "Ultrawide: 21:9 - 1536x640": (1536, 640),
+    "Landscape: 3:2 - 1280x768": (1280, 768),
+    "Square: 1:1 - 1024x1024": (1024, 1024),
+    "Portrait: 2:3 - 768x1280": (768, 1280),
+    "Tall: 9:16 - 768x1344": (768, 1344)
 }
+
 
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
     ctx_parse = discord.ApplicationContext
@@ -145,7 +148,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     @option(
         'highres_fix',
         str,
-        description='Tries to fix issues from generating high-res images. Recommended: Latent (nearest).',
+        description='Tries to fix issues from generating high-res images. Recommended: 4x-UltraMix_Balanced.',
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.hires_autocomplete),
     )
@@ -318,6 +321,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             reply_adds += f'\nURL Init Image: ``{init_image.url}``'
         if adetailer is not None:
             reply_adds += f'\nADetailer: ``{adetailer}``'
+        if highres_fix != 'Disabled':
+            reply_adds += f'\nHighres Fix: ``{highres_fix}``'
         # try to convert batch to usable format
         batch_check = settings.batch_format(batch)
         batch = list(batch_check)
@@ -460,11 +465,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 payload.update(img_payload)
 
             # update payload if high-res fix is used
+            original_width = queue_object.width
+            original_height = queue_object.height
+
             if queue_object.highres_fix != 'Disabled':
+                upscale_ratio = 1.5
+                queue_object.width = int(queue_object.width * upscale_ratio)
+                queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
-                    "hr_scale": 1,
+                    "hr_scale": upscale_ratio,
                     "hr_second_pass_steps": int(queue_object.steps)/2,
                     "denoising_strength": queue_object.strength
                 }
@@ -701,10 +712,11 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
-                if queue_object.poseref is not None:
-                    filename=f'{queue_object.seed}-1.png'
-                else:
-                    filename=f'{queue_object.seed}-{count}.png'
+                image = image.resize((original_width, original_height))
+                #if queue_object.poseref is not None:
+                #    filename=f'{queue_object.seed}-1.png'
+                #else:
+                filename=f'{queue_object.seed}-{count}.png'
                 file = add_metadata_to_image(image,str_parameters, filename)
                 queuehandler.process_post(
                     self, queuehandler.PostObject(
@@ -718,6 +730,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             embed = discord.Embed(title='txt2img failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+        
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
 

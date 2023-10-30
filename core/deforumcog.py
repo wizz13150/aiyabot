@@ -12,6 +12,7 @@ from typing import Optional
 import json
 import random
 import re
+import requests
 
 from core import settings
 from core import queuehandler
@@ -217,14 +218,23 @@ class DeforumCog(commands.Cog):
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
     @option('steps', int, description='The steps for the animation. (default=30)', required=False, default=30)
     @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
+    @option('size_ratio', str, description='The size ratio for the animation.', required=False, default=None, choices=[
+        "Fullscreen: 4:3 - 1152x896",
+        "Widescreen: 16:9 - 1344x768",
+        "Ultrawide: 21:9 - 1536x640",
+        "Landscape: 3:2 - 1280x768",
+        "Square: 1:1 - 1024x1024",
+        "Portrait: 2:3 - 768x1280",
+        "Tall: 9:16 - 768x1344"
+    ])
     @option('translation_x', str, description='The X translation to move the canvas left/right in pixels per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('translation_y', str, description='The Y translation to move the canvas up/down in pixels per frame.(default="0:(0)"))', required=False, default="0:(0)")
     @option('translation_z', str, description='The Z translation to move the canvas towards/away. [speed based on fov].(default="0:(0.5)"))', required=False, default="0:(0.5)")
     @option('rotation_3d_x', str, description='The 3D X rotation to tilt the canvas up/down in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_y', str, description='The 3D Y rotation to pan the canvas left/right in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_z', str, description='The 3D Z rotation to roll the canvas clockwise/ anticlockwise. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('width', int, description='The width for the animation. (default=832))', required=False, default=832)
-    @option('height', int, description='The height for the animation. (default=1216))', required=False, default=1216)
+    @option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
+    @option('height', int, description='The height for the animation. (default=1280))', required=False, default=1280)
     @option('fps', int, description='The FPS for the animation. (default=15))', required=False, default=15)
     @option('max_frames', int, description='The total frames for the animation. (default=10))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(140)"))', required=False, default="0:(140)")
@@ -236,6 +246,7 @@ class DeforumCog(commands.Cog):
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
     @option('frame_interpolation_engine', str, description='Enable the frame interpolation engine. Triples video generation time. (default="None", x3 FPS)', required=False, default="None", choices=["None", "FILM"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
+    @option('init_image',str,description='The starter URL image for generation.', required=False)
     @option('make_gif', bool, description='Produce a GIF version of the animation.', required=False, default=False)
 
     async def deforum_handler(
@@ -245,14 +256,15 @@ class DeforumCog(commands.Cog):
         cadence: Optional[int] = 5,
         steps: Optional[int] = 30,
         seed: Optional[int] = -1,
+        size_ratio: Optional[str] = None,
         translation_x: Optional[str] = "0:(0)",
         translation_y: Optional[str] = "0:(0)",
         translation_z: Optional[str] = "0:(0.5)",
         rotation_3d_x: Optional[str] = "0:(0)",
         rotation_3d_y: Optional[str] = "0:(0)",
         rotation_3d_z: Optional[str] = "0:(0)",
-        width: Optional[int] = 832,
-        height: Optional[int] = 1216,
+        width: Optional[int] = 768,
+        height: Optional[int] = 1280,
         fps: Optional[int] = 15,
         max_frames: Optional[int] = 120,
         fov_schedule: Optional[str] = "0:(140)",
@@ -264,8 +276,25 @@ class DeforumCog(commands.Cog):
         #add_soundtrack: discord.Attachment = None,
         frame_interpolation_engine: Optional[str] = "None",
         parseq_manifest: Optional[str] = "",
+        init_image: Optional[str] = "",
         make_gif: Optional[bool] = False
     ):
+
+        # size ratioss
+        ratios = {
+            "Fullscreen: 4:3 - 1152x896": (1152, 896),
+            "Widescreen: 16:9 - 1344x768": (1344, 768),
+            "Ultrawide: 21:9 - 1536x640": (1536, 640),
+            "Landscape: 3:2 - 1280x768": (1280, 768),
+            "Square: 1:1 - 1024x1024": (1024, 1024),
+            "Portrait: 2:3 - 768x1280": (768, 1280),
+            "Tall: 9:16 - 768x1344": (768, 1344)
+        }
+
+        # ratio override width and height if size_ratio is provided
+        if size_ratio and size_ratio in ratios:
+            width, height = ratios[size_ratio]
+
         print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
         # construct a dic for the default parameters to compare
@@ -280,8 +309,8 @@ class DeforumCog(commands.Cog):
             "rotation_3d_x": "0:(0)",
             "rotation_3d_y": "0:(0)",
             "rotation_3d_z": "0:(0)",
-            "width": 832,
-            "height": 1216,
+            "width": 768,
+            "height": 1280,
             "fps": 15,
             "max_frames": 120,
             "fov_schedule": "0:(140)",
@@ -293,6 +322,7 @@ class DeforumCog(commands.Cog):
             "frame_interpolation_engine": "None",
             #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": "",
+            "init_image": "",
             "make_gif": False
         }
 
@@ -321,6 +351,7 @@ class DeforumCog(commands.Cog):
             "frame_interpolation_engine": "Frame Interpolation Engine",
             #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": "Parseq Manifest",
+            "init_image": "Init Image",
             "make_gif": "Make GIF"
         }
 
@@ -378,6 +409,13 @@ class DeforumCog(commands.Cog):
         deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
         deforum_settings['parseq_manifest'] = parseq_manifest
         deforum_settings['make_gif'] = make_gif
+
+        # enable and add init_image url to deforum_settings
+        if init_image:
+            deforum_settings['use_init'] = True
+            deforum_settings['strength'] = 0.9
+        deforum_settings['init_image'] = init_image
+        print(f'init_image: {init_image}')
 
         try:
             prompts = self.parse_prompts(prompts)
@@ -464,9 +502,14 @@ class DeforumCog(commands.Cog):
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
 
-
     # post to discord
     async def post_dream(self, ctx, queue_object, path):
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB in bytes
+
+        def get_file_size_str(file_path):
+            size_bytes = os.path.getsize(file_path)
+            size_mb = size_bytes / (1024 * 1024)
+            return f"{size_mb:.2f} MB"
 
         if len(path) > 0:
             print('Animation made.')
@@ -484,13 +527,25 @@ class DeforumCog(commands.Cog):
             # create view
             view = DeforumView(ctx, None, queue_object)
 
-            # send the animation with the view attached
-            message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
-            view.message = message
+            # check file sizes and possibly exclude large files...
+            if os.path.getsize(anim_file) > MAX_FILE_SIZE:
+                file_size_str = get_file_size_str(anim_file)
+                await ctx.send(f"<@{ctx.author.id}> The animation file size ({file_size_str}) exceeds Discord's 50MB limit and can't be uploaded...")
+                anim_file = None
 
-            # send the video settings. If make_gif is true, attach the GIF
+            if gif_file and os.path.getsize(gif_file) > MAX_FILE_SIZE:
+                file_size_str = get_file_size_str(gif_file)
+                await ctx.send(f"<@{ctx.author.id}> The GIF file size ({file_size_str}) exceeds Discord's 50MB limit and can't be uploaded...")
+                gif_file = None
+
+            # send the animation (if it's under the limit) with the view attached
+            if anim_file:
+                message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
+                view.message = message
+
+            # send the video settings. If make_gif is true and gif is under limit, attach the GIF
             files_to_send = [discord.File(settings_file)]
-            if queue_object.deforum_settings.get('make_gif'):
+            if gif_file and queue_object.deforum_settings.get('make_gif'):
                 files_to_send.append(discord.File(gif_file))
 
             # adjust the message
@@ -501,8 +556,6 @@ class DeforumCog(commands.Cog):
 
             # add the view to this message as well
             await ctx.send(file_message, files=files_to_send, view=view)
-
-            #await ctx.respond((f'<@{ctx.author.id}> Your animation is done!' if not motion_preview_mode else 'Your movement preview is done!') + (f' Seed used: {result_seed}' if result_seed != -2 else ''))
 
         else:
             await ctx.respond(f'<@{queue_object.ctx.author.id}> Sorry, there was an error making the animation!')

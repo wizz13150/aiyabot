@@ -175,13 +175,13 @@ class GlobalQueue:
         return f"`[{''.join(bar)}]`"
 
     @staticmethod
-    async def handle_rate_limit(response, default_sleep=2):
+    async def handle_rate_limit(exception: discord.HTTPException, default_sleep=2):
         """
-        Handle the rate limit by checking the response's status and headers.
+        Handle the rate limit by checking the exception's status.
         Sleeps for the duration specified by the Retry-After header if rate-limited.
         """
-        if response.status == 429:
-            retry_after = float(response.headers.get("Retry-After", default_sleep))
+        if exception.status == 429:
+            retry_after = float(exception.headers.get("Retry-After", default_sleep))
             await asyncio.sleep(retry_after)
             return True
         return False
@@ -219,9 +219,12 @@ class GlobalQueue:
                 async with aiohttp.ClientSession() as session:
                     async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
                         
-                        # Handle potential rate limit by Discord
-                        if await GlobalQueue.handle_rate_limit(response):
-                            continue
+                        # handle potential rate limit by Discord
+                        try:
+                            await progress_msg.edit(embed=embed)
+                        except discord.HTTPException as e:
+                            if await GlobalQueue.handle_rate_limit(e):
+                                continue
 
                         data = await response.json()
                         try:
@@ -279,51 +282,6 @@ class GlobalQueue:
             await progress_msg.delete()
             GlobalQueue.priority_flag.clear()
 
-    async def update_progress_message_generate(instance, queue_object, num_prompts):
-        # wait for the priority flag to end
-        while GlobalQueue.priority_flag.is_set():
-            await asyncio.sleep(1)
-
-        # start only if no lock AND no priority flag. double is better, they said
-        async with GlobalQueue.progress_lock:
-            if not GlobalQueue.priority_flag.is_set():
-                ctx = queue_object.ctx
-                prompt = queue_object.prompt
-
-                # check for an existing progression message, if yes delete the previous one
-                async for old_msg in ctx.channel.history(limit=25):
-                    if old_msg.embeds:
-                        if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                            await old_msg.delete()
-
-                # send first message to discord, Initialization
-                embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-                progress_msg = await ctx.send(embed=embed)
-
-                # update progress message based on the current prompt being generated
-                while not queue_object.is_done:
-                    queue_size = len(GlobalQueue.generate_queue)
-                    description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
-                    description += f"\n**Prompt**: {prompt}\n🔍**Current Prompt**: {queue_object.current_prompt} of {num_prompts}\n👥 **Queued Jobs**: {queue_size}"
-                    embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
-                    
-                    # handle potential rate limit by Discord for editing the message
-                    if await GlobalQueue.handle_rate_limit(await progress_msg.edit(embed=embed)):
-                        continue
-
-                    # check if the message has been moved in the chat and move it down if needed
-                    latest_message = await ctx.channel.history(limit=1).flatten()
-                    latest_message = latest_message[0] if latest_message else None
-
-                    if latest_message and latest_message.id != progress_msg.id:
-                        await progress_msg.delete()
-                        progress_msg = await ctx.send(embed=embed)
-                    
-                    await asyncio.sleep(2)
-
-        # done, delete
-        await progress_msg.delete()
-
     def process_queue():
         def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject | DeforumObject]):
             queue_object = target_queue.pop(0)
@@ -331,6 +289,7 @@ class GlobalQueue:
 
         if GlobalQueue.queue:
             start(GlobalQueue.queue)
+
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
     GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
