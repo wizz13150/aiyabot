@@ -1,3 +1,4 @@
+# Customized version of the bot. Currently dedicated to 2 models: ZavyChromaXL and ZavyYumeXL. Also require to install ControlNet (poseref option) and Deforum (/Deforum command). Not definitive yet.
 # AIYA
 
 A Discord bot interface for Stable Diffusion
@@ -6,16 +7,32 @@ A Discord bot interface for Stable Diffusion
 
 ## Usage
 
-To generate an image from text, use the /draw command and include your prompt as the query.
+# - To generate an image from text, use the /Draw command and include your prompt as the query.
 
-<img src=https://raw.githubusercontent.com/Kilvoctu/kilvoctu.github.io/master/pics/preview2.png>
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/268950b2-dbba-48f2-8fa4-41da8604d4d4)
 
-To generate a prompt from a couple of words, use the /generate command and include your text as the query.
-
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/20c34f36-1b7d-412b-8e53-4e4b25562167)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/65249939-5ad1-4f16-aa91-6934b356996e)
 
 
-### Currently supported options
+# - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/74efc7ae-c9a9-4971-a90e-390985f5cc80)
+
+
+
+# - To generate a video from a text, use the /Deforum command and include your text, with a correct syntax, and options as the query.
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/2169d7f4-8db6-42e1-a3f8-46362cc81bac)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/cd66badc-ad6e-4f64-8f6f-87787b5b6208)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/28830477-839a-4762-9cf6-f68bd340e0cc)
+
+Result:
+
+https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b1778f7119
+
+
+
+### Currently supported options for /Draw
 
 - negative prompts
 - swap model/checkpoint (_[see wiki](https://github.com/Kilvoctu/aiyabot/wiki/Model-swapping)_)
@@ -32,6 +49,8 @@ To generate a prompt from a couple of words, use the /generate command and inclu
 - img2img
 - denoising strength
 - batch count
+- Poseref (ControlNet, openpose)
+- ADetailer (Faces, Hands, or Both)
 
 #### Bonus features
 
@@ -39,7 +58,10 @@ To generate a prompt from a couple of words, use the /generate command and inclu
   - also can set maximum steps limit and max batch count limit
   - refresh (update AIYA's options with any changes from Web UI)
 - /identify command - create a caption for your image.
-- /generate command - generate a prompt from text, using https://huggingface.co/Gustavosta/MagicPrompt-Stable-Diffusion
+- /generate command - generate a prompt from text.
+- /meta command - get metadata from an image.
+- /queue command - get the 5 next items in queues.
+- /leaderboard command - display a user leaderboard.
 - /stats command - shows how many /draw commands have been used.
 - /queue command - shows the size of each queue.
 - /info command - basic usage guide, other info, and download batch images.
