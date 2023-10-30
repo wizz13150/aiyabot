@@ -60,10 +60,9 @@ https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b
 - /identify command - create a caption for your image.
 - /generate command - generate a prompt from text.
 - /meta command - get metadata from an image.
-- /queue command - get the 5 next items in queues.
+- /queue command - shows the size of each queue and the 5 next items in queues.
 - /leaderboard command - display a user leaderboard.
 - /stats command - shows how many /draw commands have been used.
-- /queue command - shows the size of each queue.
 - /info command - basic usage guide, other info, and download batch images.
 - /upscale command - resize your image.
 - buttons - certain outputs will contain buttons.
