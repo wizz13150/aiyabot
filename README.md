@@ -1,4 +1,5 @@
-# Customized version of the bot. Currently dedicated to 2 models: ZavyChromaXL and ZavyYumeXL. Also require to install ControlNet (poseref option) and Deforum (/Deforum command). Not definitive yet.
+# Customized version of the bot. 
+Also require to install 3 extensions: ControlNet, Deforum and ADetailer.
 # AIYA
 
 A Discord bot interface for Stable Diffusion
