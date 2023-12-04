@@ -47,11 +47,11 @@ class DrawModal(Modal):
         self.input_tuple = input_tuple
 
         # fix incremented seed in Edit when batch > 1
-        current_batch = input_tuple[13][0] * input_tuple[13][1]
-        if current_batch > 1:
-            original_seed = input_tuple[10] - current_batch
-        else:
-            original_seed = input_tuple[10]
+        #current_batch = input_tuple[13][0] * input_tuple[13][1]
+        #if current_batch > 1:
+        #    original_seed = input_tuple[10] - current_batch
+        #else:
+        original_seed = input_tuple[10]
 
         # run through mod function to get clean negative since I don't want to add it to stablecog tuple
         self.clean_negative = input_tuple[3]
@@ -275,8 +275,8 @@ class DrawModal(Modal):
             channel = '% s' % pen[0].channel.id
             pen[2] = settings.extra_net_defaults(pen[2], channel)
             # set batch to 1
-            if settings.global_var.batch_buttons == "False":
-                pen[13] = [1, 1]
+            #if settings.global_var.batch_buttons == "False":
+            #    pen[13] = [1, 1]
 
             # the updated tuple to send to queue
             prompt_tuple = tuple(pen)

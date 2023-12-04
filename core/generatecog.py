@@ -17,12 +17,12 @@ from core.leaderboardcog import LeaderboardCog
 
 class RatioButton(Button):
     FORMATS = [
+        "Portrait: 2:3 - 768x1280",
+        "Landscape: 3:2 - 1280x768",
         "Fullscreen: 4:3 - 1152x896",
         "Widescreen: 16:9 - 1344x768",
         "Ultrawide: 21:9 - 1536x640",
-        "Landscape: 3:2 - 1280x768",
         "Square: 1:1 - 1024x1024",
-        "Portrait: 2:3 - 768x1280",
         "Tall: 9:16 - 768x1344"
     ]
     
@@ -33,28 +33,27 @@ class RatioButton(Button):
         self.current_index = 0
 
     async def callback(self, interaction):
-        # Avancez à l'index suivant
         self.current_index = (self.current_index + 1) % len(self.FORMATS)
         self.label = self.FORMATS[self.current_index]
         self.parent_view.selected_format = self.label
         await interaction.response.edit_message(view=self.parent_view)
 
-
+'''
 class ModelButton(Button):
     def __init__(self, parent_view):
-        super().__init__(label="ZavyChromaXL", custom_id="model", emoji="✨", style=1)  # Initial label set to "ZavyChromaXL"
+        super().__init__(label="UltimateDiffusionXL", custom_id="model", emoji="✨", style=1)  # Initial label set to "UltimateDiffusionXL"
         self.parent_view = parent_view
-        self.parent_view.selected_model = "ZavyChromaXL"  # Initial model set to "ZavyChromaXL"
+        self.parent_view.selected_model = "UltimateDiffusionXL"  # Initial model set to "UltimateDiffusionXL"
 
     async def callback(self, interaction):
-        if self.label == "ZavyChromaXL":
-            self.label = "ZavyYumeXL"
-            self.parent_view.selected_model = "ZavyYumeXL"
-        else:
+        if self.label == "UltimateDiffusionXL":
             self.label = "ZavyChromaXL"
             self.parent_view.selected_model = "ZavyChromaXL"
+        else:
+            self.label = "UltimateDiffusionXL"
+            self.parent_view.selected_model = "UltimateDiffusionXL"
         await interaction.response.edit_message(view=self.parent_view)
-
+'''
 
 class ADetailerButton(Button):
     def __init__(self, parent_view):
@@ -127,7 +126,7 @@ class PromptButton(Button):
             size_ratio = self.parent_view.selected_format
 
             # model user choice
-            model_choice = self.parent_view.selected_model
+            #model_choice = self.parent_view.selected_model
 
             # adetailer user choice
             adetailer_choice = self.parent_view.adetailer
@@ -143,7 +142,7 @@ class PromptButton(Button):
             self.parent_view.ctx.called_from_button = True
             await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt,
                                           size_ratio=size_ratio, 
-                                          data_model=model_choice,
+                                          #data_model=model_choice,
                                           adetailer=adetailer_choice,
                                           highres_fix=highres_choice,
                                           batch=batch_choice)
@@ -187,6 +186,34 @@ class RerollButton(Button):
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
 
 
+class DrawAllButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Draw All", custom_id="draw_all", emoji="🎨", style=3)
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        ctx = self.parent_view.ctx  # Obtenez le contexte de la commande
+        try:
+            # Envoyer un message initial
+            initial_message = await ctx.send(
+                content=f"<@{ctx.author.id}> Generating images for {len(self.parent_view.prompts)} prompts..."
+            )
+
+            # Traiter chaque prompt
+            for prompt_index in range(len(self.parent_view.prompts)):
+                prompt = self.parent_view.prompts[prompt_index]
+                batch_choice = str(self.parent_view.batch_value)
+                await StableCog.dream_handler(ctx, prompt=prompt,
+                                              size_ratio=self.parent_view.selected_format,
+                                              adetailer=self.parent_view.adetailer,
+                                              highres_fix=self.parent_view.hires,
+                                              batch=batch_choice)
+
+        except Exception as e:
+            print(f'The Draw All button broke: {str(e)}')
+            await ctx.send("An error occurred. This button no longer works.")
+
+
 class DeleteButton(Button):
     def __init__(self, parent_view):
         super().__init__(
@@ -224,10 +251,12 @@ class GenerateView(View):
         self.add_item(RerollButton(parent_view=self))
         self.add_item(DeleteButton(parent_view=self))
         self.add_item(RatioButton(parent_view=self))
-        self.add_item(ModelButton(parent_view=self))
+        #self.add_item(ModelButton(parent_view=self))
         self.add_item(ADetailerButton(parent_view=self))
         self.add_item(HighResButton(parent_view=self))
         self.add_item(BatchButton(parent_view=self))
+        #if num_prompts > 1:
+        #    self.add_item(DrawAllButton(parent_view=self))
 
         # Attributes to store the selected orientation and size
         self.selected_orientation = "Portrait: 2:3 - 768x1280"
@@ -246,11 +275,11 @@ class GenerateCog(commands.Cog):
         self.model_path = "core/DistilGPT2-Stable-Diffusion-V2/"
         tokenizer = AutoTokenizer.from_pretrained(self.model_path)
         model = AutoModelForCausalLM.from_pretrained(self.model_path)
-        self.pipe = pipeline('text-generation', model=model, tokenizer=tokenizer, max_length=75, temperature=0.9, top_k=8, repetition_penalty=1.2)
+        self.pipe = pipeline('text-generation', model=model, tokenizer=tokenizer, max_length=75, temperature=1, top_k=16, repetition_penalty=1.4)
 
     @commands.Cog.listener()
     async def on_ready(self):
-        self.bot.add_view(GenerateView([], None, None, None, "", 1, 75, 0.9, 8, 1.2))
+        self.bot.add_view(GenerateView([], None, None, None, "", 3, 75, 1, 16, 1.4))
 
     @commands.slash_command(name='generate', description='Generates a prompt from text', guild_only=True)
     @option(
@@ -262,40 +291,40 @@ class GenerateCog(commands.Cog):
     @option(
         'num_prompts',
         int,
-        description='The number of prompts to produce. (1-5) Default: 1',
+        description='The number of prompts to produce. (1-10) Default: 3',
         required=False,
     )
     @option(
         'max_length',
         int,
-        description='The max length for the generated prompts. (15-150) Default: 75',
+        description='The max length for the generated prompts. (15-75) Default: 75',
         required=False,
     )
     @option(
         'temperature',
         float,
-        description='Higher temp will produce more diverse results, but with a risk of less coherent text. Default: 0.9',
+        description='Higher temp will produce more diverse results, but with a risk of less coherent text. Default: 1',
         required=False,
     )
     @option(
         'top_k',
         int,
-        description='The number of tokens to sample from at each step. Default: 8',
+        description='The number of tokens to sample from at each step. Default: 16',
         required=False,
     )
     @option(
         'repetition_penalty',
         float,
-        description='The penalty value for each repetition of a token. Default: 1.2',
+        description='The penalty value for each repetition of a token. Default: 1.4',
         required=False,
     )
     async def generate_handler(self, ctx: discord.ApplicationContext, *,
                             prompt: str,
-                            num_prompts: Optional[int]=1,
+                            num_prompts: Optional[int]=3,
                             max_length: Optional[int]=75,
-                            temperature: Optional[float]=0.9,
-                            top_k: Optional[int]=8,
-                            repetition_penalty: Optional[float]=1.2):
+                            temperature: Optional[float]=1,
+                            top_k: Optional[int]=16,
+                            repetition_penalty: Optional[float]=1.4):
 
         called_from_reroll = getattr(ctx, 'called_from_reroll', False)
         current_prompt = 0
@@ -307,12 +336,12 @@ class GenerateCog(commands.Cog):
             await ctx.send_followup("The prompt cannot be empty or contain only whitespace.")
             return
 
-        if not 1 <= num_prompts <= 5:
-            await ctx.send_followup("The number of prompts must be between 1 and 5.")
+        if not 1 <= num_prompts <= 10:
+            await ctx.send_followup("The number of prompts must be between 1 and 10.")
             return
 
-        if not 15 <= max_length <= 150:
-            await ctx.send_followup("The maximum length must be between 15 and 150.")
+        if not 15 <= max_length <= 75:
+            await ctx.send_followup("The maximum length must be between 15 and 75.")
             return
 
         if temperature == 0:
@@ -328,11 +357,11 @@ class GenerateCog(commands.Cog):
             return
         
         default_values = {
-            'num_prompts': 1,
+            'num_prompts': 3,
             'max_length': 75,
-            'temperature': 0.9,
-            'top_k': 8,
-            'repetition_penalty': 1.2
+            'temperature': 1,
+            'top_k': 16,
+            'repetition_penalty': 1.4
         }
 
         current_values = {
@@ -381,10 +410,6 @@ class GenerateCog(commands.Cog):
             self.post(event_loop, queuehandler.GlobalQueue.post_queue.pop(0))
 
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float):
-
-        # start the progression message task
-        #event_loop.create_task(GlobalQueue.update_progress_message_generate(self, queue_object, num_prompts))
-
         try:
             # generate the text
             prompts = []
@@ -399,14 +424,8 @@ class GenerateCog(commands.Cog):
                 generated_text = res[0]['generated_text']
                 prompts.append(generated_text)
 
-                # Inform the progress function about the current prompt number
-                queue_object.current_prompt = i + 2
-
                 # update the leaderboard
                 LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
-
-            # progression flag, job done
-            #queue_object.is_done = True
 
             # Schedule the task to create the view and send the message
             event_loop.create_task(self.send_with_view(prompts, queue_object.ctx, queue_object.prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))

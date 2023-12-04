@@ -104,7 +104,6 @@ class PostObject:
 class GlobalQueue:
     # progression lock and prioritys
     progress_lock = asyncio.Lock()
-    priority_flag = asyncio.Event()
 
     dream_thread = Thread()
     post_event_loop = asyncio.get_event_loop()
@@ -117,6 +116,10 @@ class GlobalQueue:
     post_thread = Thread()
     event_loop = asyncio.get_event_loop()
     post_queue: list[PostObject] = []
+
+    # stock last progression message ID & channel
+    last_progress_message = None
+    last_progress_channel = None
 
     def get_queue_sizes():
         output = {}
@@ -175,7 +178,7 @@ class GlobalQueue:
         return f"`[{''.join(bar)}]`"
 
     @staticmethod
-    async def handle_rate_limit(exception: discord.HTTPException, default_sleep=2):
+    async def handle_rate_limit(exception: discord.HTTPException, default_sleep=5):
         """
         Handle the rate limit by checking the exception's status.
         Sleeps for the duration specified by the Retry-After header if rate-limited.
@@ -188,99 +191,118 @@ class GlobalQueue:
 
     @staticmethod
     async def update_progress_message(queue_object):
-        async with GlobalQueue.progress_lock:
-            # priority flag
-            GlobalQueue.priority_flag.set()
+        ctx = getattr(queue_object, "ctx", None)
+        prompt = getattr(queue_object, "prompt", None)
 
-            ctx = getattr(queue_object, "ctx", None)
-            prompt = getattr(queue_object, "prompt", None)
+        try:
+            if "prompts" in queue_object.deforum_settings:
+                prompt_value = queue_object.deforum_settings["prompts"]
+                prompt = str(prompt_value)
+            else:
+                print("[DEBUG] 'Prompts' not found in deforum_settings.")
+        except AttributeError as e:
+            ...
 
-            try:
-                if "prompts" in queue_object.deforum_settings:
-                    prompt_value = queue_object.deforum_settings["prompts"]
-                    prompt = str(prompt_value)
-                else:
-                    print("[DEBUG] 'Prompts' not found in deforum_settings.")
-            except AttributeError as e:
-                ...
+        # check for an existing progression message, if yes delete the previous one
+        if GlobalQueue.last_progress_message and GlobalQueue.last_progress_channel:
+            old_channel = ctx.bot.get_channel(GlobalQueue.last_progress_channel)
+            if old_channel:
+                try:
+                    old_message = await old_channel.fetch_message(GlobalQueue.last_progress_message)
+                    await old_message.delete()
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    print(f"Error deleting progression message: {e}")
 
-            # check for an existing progression message, if yes delete the previous one
-            async for old_msg in ctx.channel.history(limit=25):
-                if old_msg.embeds:
-                    if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                        await old_msg.delete()
+        # reset last progression messag ID & channel
+        GlobalQueue.last_progress_message = None
+        GlobalQueue.last_progress_channel = None
 
-            # send first message to discord, Initialization
-            embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-            progress_msg = await ctx.send(embed=embed)
+        # send first message to discord, Initialization
+        embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
+        progress_msg = await ctx.send(embed=embed)
 
-            # progress loop
-            while not queue_object.is_done:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
-                        
-                        # handle potential rate limit by Discord
-                        try:
-                            await progress_msg.edit(embed=embed)
-                        except discord.HTTPException as e:
-                            if await GlobalQueue.handle_rate_limit(e):
-                                continue
+        # stock new ID & channel
+        GlobalQueue.last_progress_message = progress_msg.id
+        GlobalQueue.last_progress_channel = ctx.channel.id
 
-                        data = await response.json()
-                        try:
-                            progress = round(data["progress"] * 100)
-                            job = data['state']['job']
+        # progress loop
+        while not queue_object.is_done:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
+                    
+                    # handle potential rate limit by Discord
+                    try:
+                        await progress_msg.edit(embed=embed)
+                    except discord.HTTPException as e:
+                        if await GlobalQueue.handle_rate_limit(e):
+                            continue
 
-                            # parsing the 'job' string to get the current and total number of batches
-                            match = re.search(r'Batch (\d+) out of (\d+)', job)
-                            if match:
-                                current_batch, total_batches = map(int, match.groups())
-                            else:
-                                current_batch, total_batches = 1, 1
+                    data = await response.json()
+                    try:
+                        progress = round(data["progress"] * 100)
+                        job = data['state']['job']
 
-                            progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
-                            eta_relative = round(data["eta_relative"])
-                            if prompt:
-                                short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
-                            else:
-                                short_prompt = "No prompt"
-                            sampling_step = data['state']['sampling_step']
-                            sampling_steps = data['state']['sampling_steps']
-                            queue_size = len(GlobalQueue.queue)
+                        # parsing the 'job' string to get the current and total number of batches
+                        match = re.search(r'Batch (\d+) out of (\d+)', job)
+                        if match:
+                            current_batch, total_batches = map(int, match.groups())
+                        else:
+                            current_batch, total_batches = 1, 1
 
-                            # adjust job output to the running task
-                            if job == "scripts_txt2img":
-                                job = "Batch 1 out of 1"
-                            elif job.startswith("task"):
-                                job = "Job running locally by the owner"
+                        progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
+                        eta_relative = round(data["eta_relative"])
+                        if prompt:
+                            short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
+                        else:
+                            short_prompt = "No prompt"
+                        sampling_step = data['state']['sampling_step']
+                        sampling_steps = data['state']['sampling_steps']
+                        queue_size = len(GlobalQueue.queue)
 
-                            # check recent messages and Spam the bottom, like pinned
-                            latest_message = await ctx.channel.history(limit=1).flatten()
-                            latest_message = latest_message[0] if latest_message else None
-                            if latest_message and latest_message.id != progress_msg.id:
-                                await progress_msg.delete()
-                                progress_msg = await ctx.send(embed=embed)
+                        # adjust job output to the running task
+                        if job == "scripts_txt2img":
+                            job = "Batch 1 out of 1"
+                        elif job.startswith("task"):
+                            job = "Job running locally by the owner"
 
-                            # message update
-                            embed = discord.Embed(title=f"──── Running Job Progression ────", 
-                                                description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
-                                                color=discord.Color.random())
-                            await progress_msg.edit(embed=embed)
+                        # check recent messages and Spam the bottom, like pinned
+                        latest_message = await ctx.channel.history(limit=1).flatten()
+                        latest_message = latest_message[0] if latest_message else None
+                        if latest_message and latest_message.id != progress_msg.id:
+                            await progress_msg.delete()
+                            progress_msg = await ctx.send(embed=embed)
 
-                            # wait 2 or 5 to not be rate limited by discord
-                            if isinstance(queue_object, DrawObject):
-                                await asyncio.sleep(2)
-                            elif isinstance(queue_object, DeforumObject):
-                                await asyncio.sleep(5)
-                            else:
-                                await asyncio.sleep(2)
+                        # message update
+                        embed = discord.Embed(title=f"──── Running Job Progression ────", 
+                                            description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
+                                            color=discord.Color.random())
+                        await progress_msg.edit(embed=embed)
 
-                        except Exception as e:
-                            print(f"[ERROR] Error regarding the server response: {e}")
+                        # wait 2 or 5 to not be rate limited by discord
+                        if isinstance(queue_object, DrawObject):
+                            await asyncio.sleep(2)
+                        elif isinstance(queue_object, DeforumObject):
+                            await asyncio.sleep(5)
+                        else:
+                            await asyncio.sleep(2)
 
-            # done, delete, clear priority flag
+                    except Exception as e:
+                        print(f"[ERROR] Error regarding the server response: {e}")
+
+        # done, delete progression message
+        try:
             await progress_msg.delete()
-            GlobalQueue.priority_flag.clear()
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            print(f"Error deleting progression message: {e}")
+
+        # reset last progression message ID & channel
+        GlobalQueue.last_progress_message = None
+        GlobalQueue.last_progress_channel = None
+
 
     def process_queue():
         def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject | DeforumObject]):
@@ -289,7 +311,6 @@ class GlobalQueue:
 
         if GlobalQueue.queue:
             start(GlobalQueue.queue)
-
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
     GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))

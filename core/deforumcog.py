@@ -12,7 +12,6 @@ from typing import Optional
 import json
 import random
 import re
-import requests
 
 from core import settings
 from core import queuehandler
@@ -189,10 +188,16 @@ class DeforumCog(commands.Cog):
 
         return frames
 
-    def find_animation(self, d):
-        for f in os.listdir(d):
-            if f.endswith('.mp4'):
-                return os.path.join(d, f)
+    def find_animation(self, d, frame_interpolation_engine):
+        if frame_interpolation_engine is not None:
+            regex_pattern = re.compile(r'_[A-Z]+_x[1-9]\.mp4$')
+            for f in os.listdir(d):
+                if regex_pattern.search(f):
+                    return os.path.join(d, f)
+        else:
+            for f in os.listdir(d):
+                if f.endswith('.mp4'):
+                    return os.path.join(d, f)
         return ''
 
     def find_settings(self, d):
@@ -216,7 +221,7 @@ class DeforumCog(commands.Cog):
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
     @option('prompts', str, description='The prompts to generate the animation.', required=True,)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
-    @option('steps', int, description='The steps for the animation. (default=30)', required=False, default=30)
+    @option('steps', int, description='The steps for the animation. (default=31)', required=False, default=31)
     @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
     @option('size_ratio', str, description='The size ratio for the animation.', required=False, default=None, choices=[
         "Fullscreen: 4:3 - 1152x896",
@@ -236,15 +241,15 @@ class DeforumCog(commands.Cog):
     @option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
     @option('height', int, description='The height for the animation. (default=1280))', required=False, default=1280)
     @option('fps', int, description='The FPS for the animation. (default=15))', required=False, default=15)
-    @option('max_frames', int, description='The total frames for the animation. (default=10))', required=False, default=120)
+    @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(140)"))', required=False, default="0:(140)")
     @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('noise_multiplier_schedule', str, description='Adjust the Noise Multiplier Schedule. (default="0:(1.06)"))', required=False, default="0:(1.06)")
+    @option('noise_multiplier_schedule', str, description='Adjust the Noise Multiplier Schedule. (default="0:(1.075)"))', required=False, default="0:(1.075)")
     @option('strength_schedule', str, description='Adjust the Strength Schedule. (default="0:(0.7)"))', required=False, default="0:(0.7)")
     @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(9)"))', required=False, default="0:(9)")
     @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.25)"))', required=False, default="0:(0.25)")
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
-    @option('frame_interpolation_engine', str, description='Enable the frame interpolation engine. Triples video generation time. (default="None", x3 FPS)', required=False, default="None", choices=["None", "FILM"])
+    @option('frame_interpolation_engine', str, description='Switch the frame interpolation engine. (default="RIFE v4.6", x4 FPS)', required=False, default="RIFE v4.6", choices=["None", "FILM", "RIFE v4.6"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
     @option('init_image',str,description='The starter URL image for generation.', required=False)
     @option('make_gif', bool, description='Produce a GIF version of the animation.', required=False, default=False)
@@ -253,8 +258,8 @@ class DeforumCog(commands.Cog):
         self,
         ctx,
         prompts: str,
-        cadence: Optional[int] = 5,
-        steps: Optional[int] = 30,
+        cadence: Optional[int] = 6,
+        steps: Optional[int] = 31,
         seed: Optional[int] = -1,
         size_ratio: Optional[str] = None,
         translation_x: Optional[str] = "0:(0)",
@@ -269,12 +274,12 @@ class DeforumCog(commands.Cog):
         max_frames: Optional[int] = 120,
         fov_schedule: Optional[str] = "0:(140)",
         noise_schedule: Optional[str] = "0:(0)",
-        noise_multiplier_schedule: Optional[str] = "0:(1.06)",
+        noise_multiplier_schedule: Optional[str] = "0:(1.075)",
         strength_schedule: Optional[str] = "0:(0.7)",
         cfg_scale_schedule: Optional[str] = "0:(9)",
         antiblur_amount_schedule: Optional[str] = "0:(0.25)",
         #add_soundtrack: discord.Attachment = None,
-        frame_interpolation_engine: Optional[str] = "None",
+        frame_interpolation_engine: Optional[str] = "RIFE v4.6",
         parseq_manifest: Optional[str] = "",
         init_image: Optional[str] = "",
         make_gif: Optional[bool] = False
@@ -301,7 +306,7 @@ class DeforumCog(commands.Cog):
         default_params = {
             "prompts": "",
             "cadence": 6,
-            "steps": 30,
+            "steps": 31,
             "seed": "",
             "translation_x": "0:(0)",
             "translation_y": "0:(0)",
@@ -315,11 +320,11 @@ class DeforumCog(commands.Cog):
             "max_frames": 120,
             "fov_schedule": "0:(140)",
             "noise_schedule": "0:(0)",
-            "noise_multiplier_schedule": "0:(1.06)",
+            "noise_multiplier_schedule": "0:(1.075)",
             "strength_schedule": "0:(0.7)",
             "cfg_scale_schedule": "0:(9)",
             "antiblur_amount_schedule": "0:(0.25)",
-            "frame_interpolation_engine": "None",
+            "frame_interpolation_engine": "RIFE v4.6",
             #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": "",
             "init_image": "",
@@ -504,16 +509,9 @@ class DeforumCog(commands.Cog):
 
     # post to discord
     async def post_dream(self, ctx, queue_object, path):
-        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB in bytes
-
-        def get_file_size_str(file_path):
-            size_bytes = os.path.getsize(file_path)
-            size_mb = size_bytes / (1024 * 1024)
-            return f"{size_mb:.2f} MB"
-
         if len(path) > 0:
             print('Animation made.')
-            anim_file = self.find_animation(os.path.abspath(path))
+            anim_file = self.find_animation(os.path.abspath(path), queue_object.deforum_settings.get('frame_interpolation_engine'))
             settings_file = self.find_settings(os.path.abspath(path))
             gif_file = self.find_gif(os.path.abspath(path))
             result_seed = -1
@@ -527,18 +525,7 @@ class DeforumCog(commands.Cog):
             # create view
             view = DeforumView(ctx, None, queue_object)
 
-            # check file sizes and possibly exclude large files...
-            if os.path.getsize(anim_file) > MAX_FILE_SIZE:
-                file_size_str = get_file_size_str(anim_file)
-                await ctx.send(f"<@{ctx.author.id}> The animation file size ({file_size_str}) exceeds Discord's 50MB limit and can't be uploaded...")
-                anim_file = None
-
-            if gif_file and os.path.getsize(gif_file) > MAX_FILE_SIZE:
-                file_size_str = get_file_size_str(gif_file)
-                await ctx.send(f"<@{ctx.author.id}> The GIF file size ({file_size_str}) exceeds Discord's 50MB limit and can't be uploaded...")
-                gif_file = None
-
-            # send the animation (if it's under the limit) with the view attached
+            # send the animation with the view attached
             if anim_file:
                 message = await ctx.send(f'<@{ctx.author.id}>, {settings.messages_deforum_end()}\nSeed used: {result_seed}', file=discord.File(anim_file), view=view)
                 view.message = message

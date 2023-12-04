@@ -24,12 +24,12 @@ from core.leaderboardcog import LeaderboardCog
 
 # ratios dic
 size_ratios = {
+    "Portrait: 2:3 - 768x1280": (768, 1280),
+    "Landscape: 3:2 - 1280x768": (1280, 768),
     "Fullscreen: 4:3 - 1152x896": (1152, 896),
     "Widescreen: 16:9 - 1344x768": (1344, 768),
     "Ultrawide: 21:9 - 1536x640": (1536, 640),
-    "Landscape: 3:2 - 1280x768": (1280, 768),
     "Square: 1:1 - 1024x1024": (1024, 1024),
-    "Portrait: 2:3 - 768x1280": (768, 1280),
     "Tall: 9:16 - 768x1344": (768, 1344)
 }
 
@@ -428,11 +428,11 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "sd_model_checkpoint": queue_object.data_model
             }
 
-            style_to_use = queue_object.styles
-            if "zavyyumexl" in queue_object.data_model.lower():
-                style_to_use = "Yume Style"
-                queue_object.negative_prompt = ""
-                queue_object.sampler = "Euler a"
+            #style_to_use = queue_object.styles
+            #if "zavyyumexl" in queue_object.data_model.lower():
+            #    style_to_use = "Yume Style"
+            #    queue_object.negative_prompt = ""
+            #    queue_object.sampler = "Euler a"
 
             payload = {
                 "prompt": queue_object.prompt,
@@ -449,7 +449,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "n_iter": queue_object.batch[0],
                 "batch_size": queue_object.batch[1],
                 "styles": [
-                    style_to_use
+                    queue_object.styles
                 ]
             }
 
@@ -556,7 +556,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 try:
                     s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
                 except requests.exceptions.ConnectionError:
-                    print("Connection error. No response from API. (StableCog l.547)")
+                    print("Connection error. No response from API. (StableCog l.559)")
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
             else:

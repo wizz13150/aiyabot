@@ -189,7 +189,7 @@ class MetaCog(commands.Cog):
 
         image_data.seek(0)
         image = Image.open(image_data)
-        metadata = image.info.get('parameters', '')  # Assume the metadata you want is under the 'parameters' key
+        metadata = image.info.get('parameters', '')  # Assume the metadata is under the 'parameters' key
 
         if metadata:
             # Extract different parts as you specified
@@ -208,7 +208,7 @@ class MetaCog(commands.Cog):
 
             if "Steps:" in metadata:
                 steps_and_beyond = metadata.split("Steps:")[1].strip()
-                steps = steps_and_beyond.split(", ")[0]  # First value after "Steps:"
+                steps = steps_and_beyond.split(", ")[0]
             else:
                 steps_and_beyond = ""
                 steps = "N/A"
