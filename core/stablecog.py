@@ -388,11 +388,31 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         if webui_is_offline:
             message_to_send += "\nNote: The model is currently offline. Your request won't be lost, it will be processed when it's back online !"
 
-       # check message length not exceeding 2000 chars
-        if len(message_to_send) > 2000:
-            excess_length = len(message_to_send) - 2000
-            truncated_prompt = simple_prompt[:len(simple_prompt) - excess_length - 5] + "..."
-            message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{truncated_prompt}``\nSteps: ``{steps}``{reply_adds}'
+        # Déterminez la longueur de base du message sans les prompts
+        base_message_length = len(f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ````\nSteps: ``{steps}``{reply_adds}')
+
+        # Calculez la longueur disponible pour les prompts en tenant compte de la limite de 2000 caractères
+        available_length_for_prompts = 2000 - base_message_length
+
+        # S'il n'y a pas assez d'espace pour les deux prompts, ajustez-les proportionnellement
+        if len(prompt) + len(negative_prompt) > available_length_for_prompts:
+            # Calculez la part de chaque prompt par rapport à la longueur totale des prompts
+            total_prompt_length = len(prompt) + len(negative_prompt)
+            prompt_ratio = len(prompt) / total_prompt_length
+            negative_prompt_ratio = len(negative_prompt) / total_prompt_length
+
+            # Allouez l'espace disponible proportionnellement
+            prompt_length_limit = int(available_length_for_prompts * prompt_ratio)
+            negative_prompt_length_limit = int(available_length_for_prompts * negative_prompt_ratio)
+
+            # Tronquez les prompts selon les limites calculées
+            prompt = prompt[:prompt_length_limit - 5] + "..." if len(prompt) > prompt_length_limit else prompt
+            negative_prompt = negative_prompt[:negative_prompt_length_limit - 5] + "..." if len(negative_prompt) > negative_prompt_length_limit else negative_prompt
+
+        # Reconstruisez le message avec les prompts potentiellement tronqués
+        message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{prompt}``\nSteps: ``{steps}``{reply_adds}'
+        if negative_prompt:
+            message_to_send += f'\nNegative Prompt: ``{negative_prompt}``'
          
         # send to discord
         #await ctx.channel.send(message_to_send)
@@ -469,15 +489,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             original_height = queue_object.height
 
             if queue_object.highres_fix != 'Disabled':
-                upscale_ratio = 1.5
+                upscale_ratio = 1.4
                 queue_object.width = int(queue_object.width * upscale_ratio)
                 queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
                     "hr_scale": upscale_ratio,
-                    "hr_second_pass_steps": int(queue_object.steps)/2,
-                    "denoising_strength": queue_object.strength
+                    "hr_second_pass_steps": 15, #int(queue_object.steps)/2,
+                    "denoising_strength": 0.55, #queue_object.strength,
+                    "hr_prompt": "(subsurface scattering), (Highly detailed face:1.4), (perfect eyes:1.3), (perfect teeth:1.3), (perfect hands:1.4), (good nails:1.2), (Highly detailed hand:1.3)" + queue_object.prompt,
+                    "hr_negative_prompt": "(poorly draw lines), bad hands, deformed hand, (fused fingers, elongated fingers:1.3), wrong anatomy, (additionnal fingers, missing fingers:1.3), (long nails, colored nails:1.4), (undetailed face), poorly drawn, bad proportions, (bad textures:1.3), (grainy), (intricated patterns:1.3), undetailed ornaments, artefacts, (ugly eyes, ugly teeth:1.4)" + queue_object.negative_prompt
                 }
                 payload.update(highres_payload)
 
@@ -492,16 +514,26 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     "Faces": {
                         "ad_model": "face_yolov8n.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 768,
-                        "ad_inpaint_height": 768,
+                        "ad_inpaint_width": 832,
+                        "ad_inpaint_height": 832,
+                        "ad_denoising_strength": 0.45,
+                        "ad_use_noise_multiplier": False,
+                        "ad_noise_multiplier": 1,
+                        "ad_prompt": "(Highly detailed face:1.3), (perfect eyes:1.3), (perfect teeth:1.3), good proportions, " + queue_object.prompt,
+                        "ad_negative_prompt": "Undetailed face, bad proportions, ugly eyes, bad pupils, ugly teeths, " + queue_object.negative_prompt
                     },
                     "Hands": {
                         "ad_model": "hand_yolov8n.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 768,
-                        "ad_inpaint_height": 768,
-                        "ad_use_noise_multiplier": True,
-                        "ad_noise_multiplier": 1.05,
+                        "ad_inpaint_width": 832,
+                        "ad_inpaint_height": 832,
+                        "ad_denoising_strength": 0.40,
+                        "ad_use_noise_multiplier": False,
+                        "ad_noise_multiplier": 1,
+                        "ad_prompt": "(perfect hand:1.3), (good nails:1.3), (smooth), (Highly detailed hand:1.3), (highly detailed fingers:1.3), (highly detailed nails:1.3), (good proportions:1.3), " + queue_object.prompt,
+                        "ad_negative_prompt": "Undetailed hand, (fused fingers, elongated fingers:1.4), (wrong hand anatomy), (colored nails:1.2), (additionnal fingers:1.3), (missing fingers:1.3), inversed hand, " + queue_object.negative_prompt
+                        #"ad_controlnet_module": "openpose_full",
+                        #"ad_controlnet_model": "control_openpose-fp16 [72a4faf9]"
                     }
                 }
                 args = [True]
@@ -528,7 +560,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                                 "loopback": False,
                                 "low_vram": False,
                                 "module": "openpose_full",
-                                "model": "controlnetxlCNXL_thibaudOpenposeLora [72a4faf9]",
+                                "model": "control_openpose-fp16 [72a4faf9]",
                                 "resize_mode": "Resize and Fill",
                                 "weight": 1
                             }

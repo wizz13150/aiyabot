@@ -2,7 +2,7 @@ import discord
 import traceback
 from asyncio import AbstractEventLoop, get_event_loop, run_coroutine_threadsafe
 from discord import option
-from discord.ui import Button, View
+from discord.ui import Button, View, Select
 from discord.ext import commands
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import pipeline
@@ -10,6 +10,7 @@ from typing import Optional
 
 from core import queuehandler
 from core import settings
+from core import settingscog
 from core.queuehandler import GlobalQueue
 from core.stablecog import StableCog
 from core.leaderboardcog import LeaderboardCog
@@ -36,24 +37,9 @@ class RatioButton(Button):
         self.current_index = (self.current_index + 1) % len(self.FORMATS)
         self.label = self.FORMATS[self.current_index]
         self.parent_view.selected_format = self.label
+        self.parent_view.update_select_menus()
         await interaction.response.edit_message(view=self.parent_view)
 
-'''
-class ModelButton(Button):
-    def __init__(self, parent_view):
-        super().__init__(label="UltimateDiffusionXL", custom_id="model", emoji="✨", style=1)  # Initial label set to "UltimateDiffusionXL"
-        self.parent_view = parent_view
-        self.parent_view.selected_model = "UltimateDiffusionXL"  # Initial model set to "UltimateDiffusionXL"
-
-    async def callback(self, interaction):
-        if self.label == "UltimateDiffusionXL":
-            self.label = "ZavyChromaXL"
-            self.parent_view.selected_model = "ZavyChromaXL"
-        else:
-            self.label = "UltimateDiffusionXL"
-            self.parent_view.selected_model = "UltimateDiffusionXL"
-        await interaction.response.edit_message(view=self.parent_view)
-'''
 
 class ADetailerButton(Button):
     def __init__(self, parent_view):
@@ -76,6 +62,7 @@ class ADetailerButton(Button):
             self.style = 3  # Green
 
         self.parent_view.adetailer = current_choice if current_choice != "None" else None
+        self.parent_view.update_select_menus()
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -87,10 +74,11 @@ class HighResButton(Button):
     async def callback(self, interaction):
         if self.style == 1:  # Default color
             self.style = 3  # Set this button to green
-            self.parent_view.hires = "4x-UltraMix_Balanced"
+            self.parent_view.hires = "4x_foolhardy_Remacri"
         else:
             self.style = 1  # Set the button to default color
             self.parent_view.hires = None
+        self.parent_view.update_select_menus()
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -107,6 +95,7 @@ class BatchButton(Button):
         self.current_index = (self.current_index + 1) % 4
         self.label = f"Batch: {self.batch_values[self.current_index]}"
         self.parent_view.batch_value = self.batch_values[self.current_index]
+        self.parent_view.update_select_menus()
         await interaction.response.edit_message(view=self.parent_view)
 
 
@@ -117,36 +106,12 @@ class PromptButton(Button):
             custom_id=f"prompt_{prompt_index}",
             emoji="🎨")
         self.parent_view = parent_view
+        self.prompt_index = prompt_index
 
     async def callback(self, interaction):
         try:
             await interaction.response.defer()
-            
-            # ratio user choice
-            size_ratio = self.parent_view.selected_format
-
-            # model user choice
-            #model_choice = self.parent_view.selected_model
-
-            # adetailer user choice
-            adetailer_choice = self.parent_view.adetailer
-
-            # highres fix choice
-            highres_choice = self.parent_view.hires
-
-            # batch user choice
-            batch_choice = str(self.parent_view.batch_value)
-
-            prompt_index = int(self.custom_id.split("_")[1])
-            prompt = self.parent_view.prompts[prompt_index]
-            self.parent_view.ctx.called_from_button = True
-            await StableCog.dream_handler(self.parent_view.ctx, prompt=prompt,
-                                          size_ratio=size_ratio, 
-                                          #data_model=model_choice,
-                                          adetailer=adetailer_choice,
-                                          highres_fix=highres_choice,
-                                          batch=batch_choice)
-            await interaction.edit_original_response(view=self.parent_view)
+            await self.parent_view.handle_draw_prompt(interaction, self.parent_view.prompts[self.prompt_index], self.prompt_index)
         except Exception as e:
             print(f'The draw button broke: {str(e)}')
             self.disabled = True
@@ -186,34 +151,6 @@ class RerollButton(Button):
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
 
 
-class DrawAllButton(Button):
-    def __init__(self, parent_view):
-        super().__init__(label="Draw All", custom_id="draw_all", emoji="🎨", style=3)
-        self.parent_view = parent_view
-
-    async def callback(self, interaction):
-        ctx = self.parent_view.ctx  # Obtenez le contexte de la commande
-        try:
-            # Envoyer un message initial
-            initial_message = await ctx.send(
-                content=f"<@{ctx.author.id}> Generating images for {len(self.parent_view.prompts)} prompts..."
-            )
-
-            # Traiter chaque prompt
-            for prompt_index in range(len(self.parent_view.prompts)):
-                prompt = self.parent_view.prompts[prompt_index]
-                batch_choice = str(self.parent_view.batch_value)
-                await StableCog.dream_handler(ctx, prompt=prompt,
-                                              size_ratio=self.parent_view.selected_format,
-                                              adetailer=self.parent_view.adetailer,
-                                              highres_fix=self.parent_view.hires,
-                                              batch=batch_choice)
-
-        except Exception as e:
-            print(f'The Draw All button broke: {str(e)}')
-            await ctx.send("An error occurred. This button no longer works.")
-
-
 class DeleteButton(Button):
     def __init__(self, parent_view):
         super().__init__(
@@ -232,6 +169,85 @@ class DeleteButton(Button):
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
 
 
+class DrawAllButton(Button):
+    def __init__(self, parent_view):
+        super().__init__(label="Draw All", custom_id="draw_all", emoji="✨", style=1)
+        self.parent_view = parent_view
+
+    async def callback(self, interaction):
+        try:
+            await interaction.response.defer()
+
+            # Récupérez toutes les prompts de la vue parente
+            all_prompts = self.parent_view.prompts
+
+            # Générez chaque prompt
+            for i, prompt in enumerate(all_prompts):
+                await self.parent_view.handle_draw_prompt(interaction, prompt, i)
+
+            # Éditez la réponse originale avec la vue mise à jour
+            await interaction.edit_original_response(view=self.parent_view)
+        except Exception as e:
+            print(f'Draw All button broke: {str(e)}')
+            self.disabled = True
+            await interaction.response.edit_message(view=self.parent_view)
+            await interaction.followup.send("Une erreur s'est produite lors de la génération de toutes les prompts.", ephemeral=True)
+
+
+class LorasSelect(Select):
+    def __init__(self, loras_list, *args, **kwargs):
+        options = [discord.SelectOption(label=lora) for lora in loras_list if lora is not None and lora != "None"]
+        super().__init__(placeholder="Select Loras to apply (Multiplier 0.85)...", min_values=1, max_values=len(options), options=options, *args, **kwargs)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_loras = self.values
+        self.view.loras_selections = selected_loras
+        await interaction.response.defer()
+
+    def update_selected_options(self, selected_loras):
+        for option in self.options:
+            option.default = option.value in selected_loras
+
+
+class StylesSelect(Select):
+    def __init__(self, styles_list, *args, **kwargs):
+        limited_styles_list = styles_list[:25]
+        super().__init__(*args, **kwargs)
+        self.placeholder = "Select a Style to apply..."
+        self.min_values = 1
+        self.max_values = 1 # Fixed to 1 choice for now # min(len(limited_styles_list), 25)
+        self.options = [
+            discord.SelectOption(label=style) for style in limited_styles_list
+        ]
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_styles = self.values
+        self.view.styles_selections = selected_styles
+        await interaction.response.defer()
+
+    def update_selected_options(self, selected_styles):
+        for option in self.options:
+            option.default = option.value in selected_styles
+
+'''
+class ModelsSelect(Select):
+    def __init__(self, models_list, *args, **kwargs):
+        limited_models_list = models_list[:25]
+        super().__init__(*args, **kwargs)
+        self.placeholder = "Select another Model to use..."
+        self.min_values = 1
+        self.max_values = 1
+        self.options = [
+            discord.SelectOption(label=model) for model in limited_models_list
+        ]
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_models = self.values
+        self.view.models_selections = selected_models
+        #print(f"Selected Model: {selected_models[0]}")
+        await interaction.response.defer()
+'''
+
 class GenerateView(View):
     def __init__(self, prompts, generate_cog, ctx, message, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty):
         super().__init__(timeout=None)
@@ -245,20 +261,39 @@ class GenerateView(View):
         self.temperature = temperature
         self.top_k = top_k
         self.repetition_penalty = repetition_penalty 
+        self.loras_selections = []
+        #self.models_selections = []
+        self.styles_selections = []
+
         for i, prompt in enumerate(prompts):
             button = PromptButton(label=f"Draw {i+1}", prompt_index=i, parent_view=self)
             self.add_item(button)
+
         self.add_item(RerollButton(parent_view=self))
         self.add_item(DeleteButton(parent_view=self))
         self.add_item(RatioButton(parent_view=self))
-        #self.add_item(ModelButton(parent_view=self))
         self.add_item(ADetailerButton(parent_view=self))
         self.add_item(HighResButton(parent_view=self))
         self.add_item(BatchButton(parent_view=self))
-        #if num_prompts > 1:
-        #    self.add_item(DrawAllButton(parent_view=self))
+        self.add_item(DrawAllButton(parent_view=self))
 
-        # Attributes to store the selected orientation and size
+        # Create and add the Models dropdown menu
+        settings_cog = settingscog.SettingsCog(self)
+        #models_list = settings_cog.model_autocomplete()
+        #self.models_select = ModelsSelect(models_list)
+        #self.add_item(self.models_select)
+
+        # Create and add the Lora dropdown menu
+        settings_cog = settingscog.SettingsCog(self)
+        loras_list = settings_cog.extra_net_autocomplete()
+        self.loras_select = LorasSelect(loras_list)
+        self.add_item(self.loras_select)
+
+        # Create and add the Styles dropdown menu
+        styles_list = settings_cog.style_autocomplete()
+        self.styles_select = StylesSelect(styles_list)
+        self.add_item(self.styles_select)
+
         self.selected_orientation = "Portrait: 2:3 - 768x1280"
         self.selected_model = "ZavyChromaXL"
         self.hires = None
@@ -268,20 +303,73 @@ class GenerateView(View):
     async def interaction_check(self, interaction):
         return True
 
+    def build_loras_tags(self):
+            tags = []
+            for lora in self.loras_selections:
+                tag = f"<lora:{lora}:0.85>"
+                tags.append(tag)
+            return " ".join(tags)
+
+    async def handle_draw_prompt(self, interaction, prompt, prompt_index):
+        size_ratio = self.selected_format
+        adetailer_choice = self.adetailer
+        highres_choice = self.hires
+        batch_choice = str(self.batch_value)
+        loras_tags = self.build_loras_tags()
+        prompt = f"{prompt} {loras_tags}"
+        styles = ",".join(self.styles_selections) if self.styles_selections else None
+
+        self.ctx.called_from_button = True
+        await StableCog.dream_handler(self.ctx, prompt=prompt,
+                                    styles=styles,
+                                    size_ratio=size_ratio,
+                                    adetailer=adetailer_choice,
+                                    highres_fix=highres_choice,
+                                    batch=batch_choice)
+
+        self.update_select_menus()
+        await interaction.edit_original_response(view=self)
+
+    def update_select_menus(self):
+        for item in self.children:
+            if isinstance(item, LorasSelect):
+                item.update_selected_options(self.loras_selections)
+            elif isinstance(item, StylesSelect):
+                item.update_selected_options(self.styles_selections)
+
 
 class GenerateCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.model_path = "core/DistilGPT2-Stable-Diffusion-V2/"
-        tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-        model = AutoModelForCausalLM.from_pretrained(self.model_path)
-        self.pipe = pipeline('text-generation', model=model, tokenizer=tokenizer, max_length=75, temperature=1, top_k=16, repetition_penalty=1.4)
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-        self.bot.add_view(GenerateView([], None, None, None, "", 3, 75, 1, 16, 1.4))
+        self.model_paths = {
+            "WizzGPTV2": "core/WizzGPT2-v2"#,
+            #"WizzGPT": "core/WizzGPT2",
+            #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
+            #"MagicPrompt-SD": "core/MagicPrompt-SD/",
+            #"Microsoft-Promptist": "core/Microsoft-Promptist",
+            #"Daspartho-Prompt-extend": "core/Daspartho-Prompt-extend", 
+            #"LexicArt": "core/LexicArt", 
+            #"MajinAI": "core/MajinAI", 
+            #"Kmewhort-SD-prompt-bolster": "core/Kmewhort-SD-prompt-bolster",
+            #"Succinctly-Pompt-generator": "core/Succinctly-Pompt-generator"
+        }
+        self.models = {}
+        self.tokenizers = {}
+        for model_name, model_path in self.model_paths.items():
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = AutoModelForCausalLM.from_pretrained(model_path)
+            self.models[model_name] = model
+            self.tokenizers[model_name] = tokenizer
+        self.current_model = "WizzGPTV2"
 
     @commands.slash_command(name='generate', description='Generates a prompt from text', guild_only=True)
+    @option(
+        'model',
+        str,
+        description='Choose the model to use to extend your prompt.',
+        required=False,
+        choices=["WizzGPTV2", "WizzGPT", "DistilGPT2-V2", "MagicPrompt-SD", "Microsoft-Promptist", "Daspartho-Prompt-extend", "Succinctly-Pompt-generator", "LexicArt", "MajinAI", "Kmewhort-SD-prompt-bolster"]
+    )
     @option(
         'prompt',
         str,
@@ -291,40 +379,46 @@ class GenerateCog(commands.Cog):
     @option(
         'num_prompts',
         int,
-        description='The number of prompts to produce. (1-10) Default: 3',
+        description='The number of prompts to produce. (1-7) Default: 5',
         required=False,
     )
     @option(
         'max_length',
         int,
-        description='The max length for the generated prompts. (15-75) Default: 75',
+        description='The max length for the generated prompts. (15-125) Default: 75',
         required=False,
     )
     @option(
         'temperature',
         float,
-        description='Higher temp will produce more diverse results, but with a risk of less coherent text. Default: 1',
+        description='Higher temp will produce more diverse results, but with a risk of less coherent text. Default: 1.1',
         required=False,
     )
     @option(
         'top_k',
         int,
-        description='The number of tokens to sample from at each step. Default: 16',
+        description='The number of tokens to sample from at each step. Default: 24',
         required=False,
     )
     @option(
         'repetition_penalty',
         float,
-        description='The penalty value for each repetition of a token. Default: 1.4',
+        description='The penalty value for each repetition of a token. Default: 1.35',
         required=False,
     )
     async def generate_handler(self, ctx: discord.ApplicationContext, *,
-                            prompt: str,
-                            num_prompts: Optional[int]=3,
-                            max_length: Optional[int]=75,
-                            temperature: Optional[float]=1,
-                            top_k: Optional[int]=16,
-                            repetition_penalty: Optional[float]=1.4):
+                           prompt: str,
+                           num_prompts: Optional[int] = 5,
+                           max_length: Optional[int] = 75,
+                           temperature: Optional[float] = 1.1,
+                           top_k: Optional[int] = 24,
+                           repetition_penalty: Optional[float] = 1.35,
+                           model: Optional[str] = "WizzGPTV2"):
+        
+        self.current_model = model
+        tokenizer = self.tokenizers[self.current_model]
+        eos_token_id = tokenizer.eos_token_id
+        self.pipe = pipeline('text-generation', model=self.models[self.current_model], tokenizer=tokenizer, max_length=75, temperature=0.7, top_k=8, repetition_penalty=1.2, eos_token_id=eos_token_id)
 
         called_from_reroll = getattr(ctx, 'called_from_reroll', False)
         current_prompt = 0
@@ -333,35 +427,36 @@ class GenerateCog(commands.Cog):
 
         # sanity check
         if not prompt or prompt.isspace():
-            await ctx.send_followup("The prompt cannot be empty or contain only whitespace.")
+            await ctx.respond("The prompt cannot be empty or contain only whitespace.")
             return
 
-        if not 1 <= num_prompts <= 10:
-            await ctx.send_followup("The number of prompts must be between 1 and 10.")
+        if not 1 <= num_prompts <= 7:
+            await ctx.respond("The number of prompts must be between 1 and 7.")
             return
 
-        if not 15 <= max_length <= 75:
-            await ctx.send_followup("The maximum length must be between 15 and 75.")
+        if not 15 <= max_length <= 125:
+            await ctx.respond("The maximum length must be between 15 and 125.")
             return
 
         if temperature == 0:
-            await ctx.send_followup("The temperature must not be zero.")
+            await ctx.respond("The temperature must not be zero.")
             return
 
         if top_k == 0:
-            await ctx.send_followup("The top_k value must not be zero.")
+            await ctx.respond("The top_k value must not be zero.")
             return
 
         if repetition_penalty == 0:
-            await ctx.send_followup("The repetition penalty must not be zero.")
+            await ctx.respond("The repetition penalty must not be zero.")
             return
         
         default_values = {
-            'num_prompts': 3,
-            'max_length': 75,
-            'temperature': 1,
-            'top_k': 16,
-            'repetition_penalty': 1.4
+            'num_prompts': "dummy", # always mention the number
+            'max_length': "dummy", # always mention the length
+            'temperature': 1.1,
+            'top_k': 24,
+            'repetition_penalty': 1.35,
+            'model': "dummy" # always mention the model
         }
 
         current_values = {
@@ -369,7 +464,8 @@ class GenerateCog(commands.Cog):
             'max_length': max_length,
             'temperature': temperature,
             'top_k': top_k,
-            'repetition_penalty': repetition_penalty
+            'repetition_penalty': repetition_penalty,
+            'model': model
         }
 
         key_mapping = {
@@ -377,7 +473,8 @@ class GenerateCog(commands.Cog):
             'max_length': 'Max Length',
             'temperature': 'Temperature',
             'top_k': 'Top K',
-            'repetition_penalty': 'Repetition Penalty'
+            'repetition_penalty': 'Repetition Penalty',
+            'model': 'Model'
         }
 
         modified_args = [f"{key_mapping[key]}: ``{value}``" for key, value in current_values.items() if value != default_values[key]]
@@ -389,9 +486,9 @@ class GenerateCog(commands.Cog):
 
         # set up the queue
         if queuehandler.GlobalQueue.generate_thread.is_alive():
-            queuehandler.GlobalQueue.generate_queue.append(queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt))
+            queuehandler.GlobalQueue.generate_queue.append(queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt, model))
         else:
-            await queuehandler.process_generate(self, queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt))
+            await queuehandler.process_generate(self, queuehandler.GenerateObject(self, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt, model))
         
         if called_from_reroll:
             await ctx.channel.send(response_message)
@@ -409,25 +506,34 @@ class GenerateCog(commands.Cog):
         if queuehandler.GlobalQueue.post_queue:
             self.post(event_loop, queuehandler.GlobalQueue.post_queue.pop(0))
 
-    def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float):
+    def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float, model: str):
         try:
-            # generate the text
+            # Choisissez le modèle et le tokenizer en fonction de l'argument 'model'
+            selected_model = self.models[model]
+            selected_tokenizer = self.tokenizers[model]
+            selected_eos_token_id = selected_tokenizer.eos_token_id
+
+            # Configurez le pipeline avec le modèle et le tokenizer sélectionnés
+            pipe = pipeline('text-generation', model=selected_model, tokenizer=selected_tokenizer, max_length=max_length, temperature=temperature, top_k=top_k, repetition_penalty=repetition_penalty, eos_token_id=selected_eos_token_id)
+
+            # Générez le texte
             prompts = []
             for i in range(num_prompts):
-                res = self.pipe(
+                res = pipe(
                     queue_object.prompt,
                     max_length=max_length,
                     temperature=temperature,
                     top_k=top_k,
-                    repetition_penalty=repetition_penalty
+                    repetition_penalty=repetition_penalty,
+                    eos_token_id=selected_eos_token_id
                     )
                 generated_text = res[0]['generated_text']
                 prompts.append(generated_text)
 
-                # update the leaderboard
+                # Mise à jour du classement
                 LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
 
-            # Schedule the task to create the view and send the message
+            # Planifiez la tâche pour créer la vue et envoyer le message
             event_loop.create_task(self.send_with_view(prompts, queue_object.ctx, queue_object.prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
 
         except Exception as e:
