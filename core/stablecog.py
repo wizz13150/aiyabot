@@ -489,17 +489,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             original_height = queue_object.height
 
             if queue_object.highres_fix != 'Disabled':
-                upscale_ratio = 1.4
+                upscale_ratio = 1.3
                 queue_object.width = int(queue_object.width * upscale_ratio)
                 queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
                     "hr_scale": upscale_ratio,
-                    "hr_second_pass_steps": 15, #int(queue_object.steps)/2,
-                    "denoising_strength": 0.55, #queue_object.strength,
-                    "hr_prompt": "(subsurface scattering), (Highly detailed face:1.4), (perfect eyes:1.3), (perfect teeth:1.3), (perfect hands:1.4), (good nails:1.2), (Highly detailed hand:1.3)" + queue_object.prompt,
-                    "hr_negative_prompt": "(poorly draw lines), bad hands, deformed hand, (fused fingers, elongated fingers:1.3), wrong anatomy, (additionnal fingers, missing fingers:1.3), (long nails, colored nails:1.4), (undetailed face), poorly drawn, bad proportions, (bad textures:1.3), (grainy), (intricated patterns:1.3), undetailed ornaments, artefacts, (ugly eyes, ugly teeth:1.4)" + queue_object.negative_prompt
+                    "hr_second_pass_steps": int(queue_object.steps)/1.75,
+                    "denoising_strength": 0.5, #queue_object.strength,
+                    "hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
+                    "hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
                 }
                 payload.update(highres_payload)
 
@@ -512,26 +512,36 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             if queue_object.adetailer and queue_object.adetailer != "None":
                 model_mappings = {
                     "Faces": {
-                        "ad_model": "face_yolov8n.pt",
+                        "ad_model": "face_yolov8s.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 832,
-                        "ad_inpaint_height": 832,
-                        "ad_denoising_strength": 0.45,
-                        "ad_use_noise_multiplier": False,
-                        "ad_noise_multiplier": 1,
-                        "ad_prompt": "(Highly detailed face:1.3), (perfect eyes:1.3), (perfect teeth:1.3), good proportions, " + queue_object.prompt,
-                        "ad_negative_prompt": "Undetailed face, bad proportions, ugly eyes, bad pupils, ugly teeths, " + queue_object.negative_prompt
+                        "ad_inpaint_width": 1024,
+                        "ad_inpaint_height": 1024,
+                        "ad_denoising_strength": 0.40,
+                        "ad_dilate_erode": 64,
+                        "ad_mask_max_ratio": 0.25,
+                        "ad_mask_blur": 12,
+                        "ad_inpaint_only_masked": True,
+                        "ad_inpaint_only_masked_padding": 32,
+                        #"ad_use_noise_multiplier": True,
+                        #"ad_noise_multiplier": 1.025,
+                        "ad_prompt": "(extremely detailed face:2), (extremely detailed eyes:2), (smooth skin:2), (extremely detailed teeth:2), " + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), lowres, heterochromia, (poorly drawn teeth, poorly drawn eyes:2), (big teeths:2)"
                     },
                     "Hands": {
-                        "ad_model": "hand_yolov8n.pt",
+                        "ad_model": "hand_yolov8s.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 832,
-                        "ad_inpaint_height": 832,
-                        "ad_denoising_strength": 0.40,
-                        "ad_use_noise_multiplier": False,
-                        "ad_noise_multiplier": 1,
-                        "ad_prompt": "(perfect hand:1.3), (good nails:1.3), (smooth), (Highly detailed hand:1.3), (highly detailed fingers:1.3), (highly detailed nails:1.3), (good proportions:1.3), " + queue_object.prompt,
-                        "ad_negative_prompt": "Undetailed hand, (fused fingers, elongated fingers:1.4), (wrong hand anatomy), (colored nails:1.2), (additionnal fingers:1.3), (missing fingers:1.3), inversed hand, " + queue_object.negative_prompt
+                        "ad_inpaint_width": 1024,
+                        "ad_inpaint_height": 1024,
+                        "ad_denoising_strength": 0.45,
+                        "ad_dilate_erode": 64,
+                        "ad_mask_max_ratio": 0.15,
+                        "ad_mask_blur": 12,
+                        "ad_inpaint_only_masked": True,
+                        "ad_inpaint_only_masked_padding": 32,
+                        "ad_use_noise_multiplier": True,
+                        "ad_noise_multiplier": 1.03,
+                        "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color" + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
                         #"ad_controlnet_module": "openpose_full",
                         #"ad_controlnet_model": "control_openpose-fp16 [72a4faf9]"
                     }

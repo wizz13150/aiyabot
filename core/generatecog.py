@@ -339,13 +339,12 @@ class GenerateView(View):
 
 
 class GenerateCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.model_paths = {
-            "WizzGPTV2": "core/WizzGPT2-v2"#,
+    model_paths = {
+            #"WizzGPTV2": "core/WizzGPT2-v2",
+            #"Insomnia": "core/Insomnia",
             #"WizzGPT": "core/WizzGPT2",
-            #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
-            #"MagicPrompt-SD": "core/MagicPrompt-SD/",
+            "DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
+            "MagicPrompt-SD": "core/MagicPrompt-SD/"#,
             #"Microsoft-Promptist": "core/Microsoft-Promptist",
             #"Daspartho-Prompt-extend": "core/Daspartho-Prompt-extend", 
             #"LexicArt": "core/LexicArt", 
@@ -353,6 +352,10 @@ class GenerateCog(commands.Cog):
             #"Kmewhort-SD-prompt-bolster": "core/Kmewhort-SD-prompt-bolster",
             #"Succinctly-Pompt-generator": "core/Succinctly-Pompt-generator"
         }
+    model_choices = list(model_paths.keys())
+
+    def __init__(self, bot):
+        self.bot = bot
         self.models = {}
         self.tokenizers = {}
         for model_name, model_path in self.model_paths.items():
@@ -368,7 +371,7 @@ class GenerateCog(commands.Cog):
         str,
         description='Choose the model to use to extend your prompt.',
         required=False,
-        choices=["WizzGPTV2", "WizzGPT", "DistilGPT2-V2", "MagicPrompt-SD", "Microsoft-Promptist", "Daspartho-Prompt-extend", "Succinctly-Pompt-generator", "LexicArt", "MajinAI", "Kmewhort-SD-prompt-bolster"]
+        choices=model_choices
     )
     @option(
         'prompt',
