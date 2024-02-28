@@ -44,7 +44,7 @@ batch_buttons = "True"
 # Whether or not buttons are restricted to user who requested image ("True"/"False")
 restrict_buttons = "False"
 
-# The maximum value allowed for width/height (keep as multiple of 64)
+# The maximum value allowed for width/height (keep as multiple of 8)
 max_size = 832
 
 # The resize amount when using context menu Quick Upscale
@@ -52,7 +52,7 @@ quick_upscale_resize = 2.0
 
 # AIYA won't generate if prompt has any words in the ban list
 # Separate with commas; example, ["a", "b", "c"]
-prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Cock", "Anal", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
+prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Cock", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
 # These words will be automatically removed from the prompt
 prompt_ignore_list = []
 # Choose whether or not ignored words are displayed to user
@@ -104,7 +104,7 @@ class GlobalVar:
     api_user: Optional[str] = None
     api_pass: Optional[str] = None
     model_info = {}
-    size_range = range(192, 1088, 64)
+    size_range = range(192, 1088, 8)
     size_range_exceed = None
     sampler_names = []
     style_names = {}
@@ -538,7 +538,7 @@ def populate_global_vars():
     global_var.display_ignored_words = config['display_ignored_words']
     global_var.negative_prompt_prefix = [x for x in config['negative_prompt_prefix']]
     # slash command doesn't update this dynamically. Changes to size need a restart.
-    global_var.size_range = range(192, config['max_size'] + 64, 64)
+    global_var.size_range = range(192, config['max_size'] + 8, 8)
     if len(global_var.size_range) > 25:
         global_var.size_range_exceed = [x for x in global_var.size_range]
         global_var.size_range = []

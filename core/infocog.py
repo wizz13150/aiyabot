@@ -255,7 +255,6 @@ class InfoView(View):
         embed_tips1.add_field(name="image-to-image",
                               value="Use the /draw command for this, **init_img** option for an attachment or **init_url** for a link."
                                                            "\nNote that **strength** interacts with img2img. The range is 0.0 to 1.0, with higher values having more effect on the image.")
-        embed_tips1.add_field(name="\u200B", value="\u200B")
         embed_tips1.add_field(name="/generate command",
                               value="Generates a prompt from text. This is the best command, for sure. Generate prompts from a few words, and Draw from them. The option **num_prompts** allows to choose the number of prompts to produce (1-5).")
         embed_tips1.add_field(name="/identify command",
@@ -356,6 +355,41 @@ class InfoView(View):
         ]
 
         await interaction.response.edit_message(view=self, embed=self.contents[0])
+
+    @discord.ui.button(
+        custom_id="button_wildcards",
+        label="Wildcards", row=1)
+    async def button_wildcards(self, _button, interaction):
+        # Path to wildcards
+        wildcards_folder = "..\\stable-diffusion-webui\\extensions\\stable-diffusion-webui-wildcards\\wildcards"
+        
+        file_names = [f.split('.')[0] for f in os.listdir(wildcards_folder) if f.endswith('.txt')]
+        length = len(file_names)
+        batch = 60  # 20 noms par colonne, 3 colonnes par page
+        self.page = 0
+        self.contents = []
+
+        if length > batch:
+            self.enable_nav_buttons()
+        else:
+            self.disable_nav_buttons()
+
+        for i in range(0, length, batch):
+            embed_page = discord.Embed(title="Wildcards list", colour=settings.global_var.embed_color)
+            for j in range(3):  # Trois colonnes
+                column_content = "\n".join(file_names[i + j*20 : i + (j+1)*20])
+                embed_page.add_field(name=f"Column {j+1}", value=column_content or 'No wildcards', inline=True)
+            
+            if length > batch:
+                embed_page.set_footer(text=f'Page {self.page + 1} of {math.ceil(length / batch)} - {length} total')
+            self.contents.append(embed_page)
+            self.page += 1
+
+        self.page = 0
+        try:
+            await interaction.response.edit_message(view=self, embed=self.contents[0])
+        except(Exception,):
+            await interaction.followup.send(view=self, embed=self.contents[0], ephemeral=True)
 
     @discord.ui.button(
         custom_id="button_back", label="◀️", row=1, disabled=True)

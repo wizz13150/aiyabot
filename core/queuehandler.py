@@ -2,7 +2,16 @@ import aiohttp
 import asyncio
 import discord
 import re
+from discord.ui import View, Button
 from threading import Thread
+
+from PIL import Image
+import io
+import base64
+import contextlib
+
+
+from core import settings
 
 
 # the queue object for txt2image and img2img
@@ -33,10 +42,8 @@ class DrawObject:
         self.extra_net = extra_net
         self.epoch_time = epoch_time
         self.view = view
+        self.user_id = ctx.author.id
         self.is_done = False
-
-    #def get_prompt(self):
-    #    return self.prompt
 
 
 # the queue object for Deforum command
@@ -45,11 +52,9 @@ class DeforumObject:
         self.cog = cog
         self.ctx = ctx
         self.deforum_settings = deforum_settings
+        self.prompt = deforum_settings["prompts"]
         self.view = view
         self.is_done = False
-
-    #def get_prompt(self):
-    #    return self.deforum_settings["Prompts"]
 
 
 # the queue object for extras - upscale
@@ -81,7 +86,7 @@ class IdentifyObject:
 
 # the queue object for generate
 class GenerateObject:
-    def __init__(self, cog, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty):
+    def __init__(self, cog, ctx, prompt, num_prompts, max_length, temperature, top_k, repetition_penalty, current_prompt, model):
         self.cog = cog
         self.ctx = ctx
         self.prompt = prompt
@@ -90,6 +95,9 @@ class GenerateObject:
         self.temperature = temperature
         self.top_k = top_k
         self.repetition_penalty = repetition_penalty
+        self.current_prompt = current_prompt
+        self.model = model
+        self.is_done = False
 
 
 # the queue object for posting to Discord
@@ -102,9 +110,72 @@ class PostObject:
         self.embed = embed
         self.view = view
 
+# view that holds the interrupt button for progress
+class ProgressView(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+    async def user_is_authorized(self, interaction):
+        if str(interaction.user.id) == str(self.user_id):
+            return True
+        
+        moderator_role_name = "Moderator"
+        return any(role.name == moderator_role_name for role in interaction.user.roles)
+
+    @discord.ui.button(
+        label="Interrupt Job", 
+        custom_id="button_interrupt",
+        emoji="❌")
+    async def button_interrupt(self, button, interaction):
+        try:
+            if not await self.user_is_authorized(interaction):
+                await interaction.response.send_message("You are not authorized to interrupt this job.", ephemeral=True)
+                return
+            s = settings.authenticate_user()
+            s.post(url=f'{settings.global_var.url}/sdapi/v1/interrupt')
+            await interaction.response.edit_message(view=self)
+        except Exception as e:
+            button.disabled = True
+            await interaction.response.send_message("An error occurred: " + str(e), ephemeral=True)
+
+    @discord.ui.button(
+        label="Skip Image", 
+        custom_id="button_skip",
+        emoji="➡️")
+    async def button_skip(self, button, interaction):
+        try:
+            if not await self.user_is_authorized(interaction):
+                await interaction.response.send_message("You are not authorized to skip this job.", ephemeral=True)
+                return
+            s = settings.authenticate_user()
+            s.post(url=f'{settings.global_var.url}/sdapi/v1/skip')
+            await interaction.response.edit_message(view=self)
+        except Exception as e:
+            button.disabled = True
+            await interaction.response.send_message("An error occurred: " + str(e), ephemeral=True)
+
+    @discord.ui.button(
+        label="Cancel All", 
+        custom_id="button_cancel_all",
+        emoji="🚫")
+    async def button_cancel_all(self, button, interaction):
+        if not await self.user_is_authorized(interaction):
+            await interaction.response.send_message("You are not authorized to cancel jobs.", ephemeral=True)
+            return
+
+        # delete jobs from user
+        GlobalQueue.queue = [job for job in GlobalQueue.queue if job.user_id != self.user_id or not isinstance(job, DrawObject)]
+
+
+        await interaction.response.send_message("All pending draw jobs from you have been cancelled.", ephemeral=True)
+
 
 # any command that needs to wait on processing should use the dream thread
 class GlobalQueue:
+    # progression lock and prioritys
+    progress_lock = asyncio.Lock()
+
     dream_thread = Thread()
     post_event_loop = asyncio.get_event_loop()
     queue: list[DrawObject | UpscaleObject | IdentifyObject| DeforumObject] = []
@@ -134,12 +205,12 @@ class GlobalQueue:
         if GlobalQueue.queue:
             general_queue_info = []
             for index, item in enumerate(GlobalQueue.queue[:5], start=1):
-                item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"  # Utilisation du mapping
+                item_info = f"\n{index}. {display_names.get(item.__class__.__name__, item.__class__.__name__)}"
                 if isinstance(item, DrawObject):
-                    item_info += f" - Prompt: {item.prompt[:25] + '...' if len(item.prompt) > 25 else item.prompt}"
+                    item_info += f" - Prompt: {item.prompt[:100] + '...' if len(item.prompt) > 100 else item.prompt}"
                 elif isinstance(item, DeforumObject):
-                    first_prompt = item.deforum_settings["Prompts"][0] if item.deforum_settings["Prompts"] else ""
-                    item_info += f" - Prompts: {first_prompt[:25] + '...' if len(first_prompt) > 25 else first_prompt}"
+                    deforum_prompt = str(item.prompt)
+                    item_info += f" - Prompt: {deforum_prompt[:100] + '...' if len(item.prompt) > 100 else item.prompt}"
                 general_queue_info.append(item_info)
             output["\n**General Queue next items**"] = "".join(general_queue_info)
 
@@ -158,9 +229,7 @@ class GlobalQueue:
      
         # mark batches
         batch_marker_positions = set(int(length * i // total_batches) for i in range(1, total_batches))
-        
         bar = []
-     
         for i in range(length):
             # not more than available slots
             if i < filled_length:
@@ -173,140 +242,157 @@ class GlobalQueue:
                     bar.append(batch_char)
                 else:
                     bar.append(empty_char)
-     
         return f"`[{''.join(bar)}]`"
 
     @staticmethod
+    async def handle_rate_limit(exception: discord.HTTPException, default_sleep=2):
+        if exception.status == 429:
+            retry_after = float(exception.headers.get("Retry-After", default_sleep))
+            await asyncio.sleep(retry_after)
+            return True
+        return False
+
+    @staticmethod
     async def update_progress_message(queue_object):
-        ctx = queue_object.ctx
-        prompt = queue_object.prompt
+        async with GlobalQueue.progress_lock:
+            ctx = getattr(queue_object, "ctx", None)
+            prompt = getattr(queue_object, "prompt", None)
 
-        # check for an existing progression message, if yes delete the previous one
-        async for old_msg in ctx.channel.history(limit=25):
-            if old_msg.embeds:
-                if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                    await old_msg.delete()
+            try:
+                if "prompts" in queue_object.deforum_settings:
+                    prompt_value = queue_object.deforum_settings["prompts"]
+                    prompt = str(prompt_value)
+                else:
+                    print("[DEBUG] 'Prompts' not found in deforum_settings.")
+            except AttributeError as e:
+                ...
 
-        # send first message to discord, Initialization
-        embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-        progress_msg = await ctx.send(embed=embed)
+            # check for an existing progression message, if yes delete the previous one
+            async for old_msg in ctx.channel.history(limit=25):
+                if old_msg.embeds:
+                    if old_msg.embeds[0].title == "──── Running Job Progression ────":
+                        await old_msg.delete()
 
-        # progress loop
-        null_counter = 0
-        while not queue_object.is_done:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
-                    data = await response.json()
+            # send first message to discord, Initialization
+            embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
+            view = ProgressView(queue_object.user_id)
 
-                    progress = round(data["progress"] * 100)
-                    job = data['state']['job']
+            progress_msg = await ctx.send(embed=embed, view=view)
 
-                    # parsing the 'job' string to get the current and total number of batches
-                    match = re.search(r'Batch (\d+) out of (\d+)', job)
-                    if match:
-                        current_batch, total_batches = map(int, match.groups())
-                    else:
-                        current_batch, total_batches = 1, 1
+            # progress loop
+            while not queue_object.is_done:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
+                        
+                        # handle potential rate limit by Discord
+                        try:
+                            await progress_msg.edit(embed=embed, view=view)
+                        except discord.HTTPException as e:
+                            if await GlobalQueue.handle_rate_limit(e):
+                                continue
 
-                    progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
-                    eta_relative = round(data["eta_relative"])
-                    #prompt = queue_object.get_prompt()s
-                    #short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
-                    short_prompt = queue_object.prompt[:125] + "..." if len(prompt) > 125 else prompt
-                    sampling_step = data['state']['sampling_step']
-                    sampling_steps = data['state']['sampling_steps']
-                    queue_size = len(GlobalQueue.queue)
+                        data = await response.json()
+                        try:
+                            progress = round(data["progress"] * 100)
+                            job = data['state']['job']
 
-                    # adjust job output to the running task
-                    if job == "scripts_txt2img":
-                        job = "Batch 1 out of 1"
-                    elif job.startswith("task"):
-                        job = "Job running locally by the owner"
+                            # parsing the 'job' string to get the current and total number of batches
+                            match = re.search(r'Batch (\d+) out of (\d+)', job)
+                            if match:
+                                current_batch, total_batches = map(int, match.groups())
+                            else:
+                                current_batch, total_batches = 1, 1
 
-                    # check recent messages and Spam the bottom, like pinned
-                    latest_message = await ctx.channel.history(limit=1).flatten()
-                    latest_message = latest_message[0] if latest_message else None
+                            progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
+                            eta_relative = round(data["eta_relative"])
+                            if prompt:
+                                short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
+                            else:
+                                short_prompt = "No prompt"
+                            sampling_step = data['state']['sampling_step']
+                            sampling_steps = data['state']['sampling_steps']
+                            queue_size = len(GlobalQueue.queue)
 
-                    if latest_message and latest_message.id != progress_msg.id:
-                        await progress_msg.delete()
-                        progress_msg = await ctx.send(embed=embed)
+                            if data["current_image"] and data["current_image"].strip():
+                                try:
+                                    image_data = base64.b64decode(data["current_image"])
+                                    if not image_data:
+                                        file = None
+                                        await asyncio.sleep(1)
+                                    else:
+                                        image = Image.open(io.BytesIO(image_data))
 
-                    # message update
-                    embed = discord.Embed(title=f"──── Running Job Progression ────", 
-                                          description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
-                                          color=discord.Color.random())
-                    await progress_msg.edit(embed=embed)
+                                        # send a smaller image
+                                        new_width = int(image.width * 0.85)
+                                        new_height = int(image.height * 0.85)
+                                        image = image.resize((new_width, new_height), Image.ANTIALIAS)
 
-                    await asyncio.sleep(1)
+                                        with contextlib.ExitStack() as stack:
+                                            buffer = stack.enter_context(io.BytesIO())
+                                            image.save(buffer, 'PNG')
+                                            buffer.seek(0)
+                                            file = discord.File(fp=buffer, filename=f'{queue_object.seed}.png')
+                                except Exception as e:
+                                    file = None
+                            else:
+                                await asyncio.sleep(1)
+                                file = None
 
-        # done, delete
-        await progress_msg.delete()
+                            # adjust job output to the running task
+                            if job == "scripts_txt2img":
+                                job = "Batch 1 out of 1"
+                            elif job.startswith("task"):
+                                job = "Job running locally by the owner"
+
+                            # check recent messages and Spam the bottom, like pinned
+                            latest_message = await ctx.channel.history(limit=1).flatten()
+                            latest_message = latest_message[0] if latest_message else None
+                            if latest_message and latest_message.id != progress_msg.id:
+                                await progress_msg.delete()
+                                progress_msg = await ctx.send(embed=embed)
+
+                            # message update
+                            embed = discord.Embed(title=f"──── Running Job Progression ────", 
+                                                description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
+                                                color=discord.Color.random())
+                            embed.set_image(url=f"attachment://{queue_object.seed}.png")
+
+                            if file is None:
+                                await progress_msg.edit(embed=embed, view=view)
+                            else:
+                                await progress_msg.edit(embed=embed, file=file, view=view)
+
+                            # wait 2 or 5 to not be rate limited by discord
+                            if isinstance(queue_object, DrawObject):
+                                await asyncio.sleep(3)
+                            elif isinstance(queue_object, DeforumObject):
+                                await asyncio.sleep(5)
+                            else:
+                                await asyncio.sleep(3)
+
+                        except Exception as e:
+                            pass
+
+            # done, delete, clear priority flag
+            await progress_msg.delete()
 
     def process_queue():
-        def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject]):
+        def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject | DeforumObject]):
             queue_object = target_queue.pop(0)
             queue_object.cog.dream(GlobalQueue.event_loop, queue_object)
 
         if GlobalQueue.queue:
             start(GlobalQueue.queue)
 
-    '''
-    async def update_progress_message_generate(instance, queue_object, num_prompts):
-        ctx = queue_object.ctx
-
-        # check for an existing progression message, if yes delete the previous one
-        async for old_msg in ctx.channel.history(limit=25):
-            if old_msg.embeds:
-                if old_msg.embeds[0].title == "──── Running Job Progression ────":
-                    await old_msg.delete()
-
-        # send first message to discord, Initialization
-        embed = discord.Embed(title="Initialization...", color=discord.Color.blue())
-        progress_msg = await ctx.send(embed=embed)
-
-        prompts = []
-        for i in range(num_prompts):
-            res = self.pipe(
-                queue_object.prompt,
-                max_length=max_length,
-                temperature=temperature,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty
-            )
-            generated_text = res[0]['generated_text']
-            prompts.append(generated_text)
-
-            # update the leaderboard
-            LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
-
-            # update progress message
-            description = f"Generating {num_prompts} {'prompt' if num_prompts == 1 else 'prompts'}!"
-            description += f"\nCurrently on prompt {i+1} of {num_prompts}."
-            embed = discord.Embed(title=f"──── Running Job Progression ────", description=description, color=discord.Color.random())
-            await progress_msg.edit(embed=embed)
-
-        # check if the message has been moved in the chat and move it down if needed
-        while not queue_object.is_done:
-            latest_message = await ctx.channel.history(limit=1).flatten()
-            latest_message = latest_message[0] if latest_message else None
-
-            if latest_message and latest_message.id != progress_msg.id:
-                await progress_msg.delete()
-                progress_msg = await ctx.send(embed=embed)
-            
-            await asyncio.sleep(0.5)
-
-        # done, delete
-        await progress_msg.delete()
-        '''
-
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
     GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
     GlobalQueue.dream_thread.start()
 
-async def process_generate(self, queue_object: GenerateObject):
-    GlobalQueue.generate_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object, queue_object.num_prompts, queue_object.max_length, queue_object.temperature, queue_object.top_k, queue_object.repetition_penalty))
+async def process_generate(generate_cog, queue_object: GenerateObject):
+    GlobalQueue.generate_thread = Thread(target=generate_cog.dream, args=(
+        GlobalQueue.event_loop, queue_object, queue_object.num_prompts, queue_object.max_length, 
+        queue_object.temperature, queue_object.top_k, queue_object.repetition_penalty, queue_object.model))
     GlobalQueue.generate_thread.start()
 
 def process_post(self, queue_object: PostObject):

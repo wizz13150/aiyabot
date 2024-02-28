@@ -21,15 +21,18 @@ from core.queuehandler import GlobalQueue
 from core.leaderboardcog import LeaderboardCog
 
 
+
 # ratios dic
 size_ratios = {
-    "Portrait_Medium (832x1216)": (832, 1216),
-    "Portrait_Big (1024x1536)": (1024, 1536),
-    "Landscape_Medium (1216x832)": (1216, 832),
-    "Landscape_Big (1536x1024)": (1536, 1024),
-    "Square_Medium (1024x1024)": (1024, 1024),
-    "Square_Big (1536x1536)": (1536, 1536)
+    "Portrait: 2:3 - 768x1280": (768, 1280),
+    "Landscape: 3:2 - 1280x768": (1280, 768),
+    "Fullscreen: 4:3 - 1152x896": (1152, 896),
+    "Widescreen: 16:9 - 1344x768": (1344, 768),
+    "Ultrawide: 21:9 - 1536x640": (1536, 640),
+    "Square: 1:1 - 1024x1024": (1024, 1024),
+    "Tall: 9:16 - 768x1344": (768, 1344)
 }
+
 
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
     ctx_parse = discord.ApplicationContext
@@ -145,7 +148,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     @option(
         'highres_fix',
         str,
-        description='Tries to fix issues from generating high-res images. Recommended: Latent (nearest).',
+        description='Tries to fix issues from generating high-res images. Recommended: 4x-UltraMix_Balanced.',
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.hires_autocomplete),
     )
@@ -198,9 +201,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             init_url: Optional[str] = None,
                             poseref: Optional[discord.Attachment] = None,
                             batch: Optional[str] = None):
-        
+
         called_from_button = getattr(ctx, 'called_from_button', False)
-        
+
         # update defaults with any new defaults from settingscog
         channel = '% s' % ctx.channel.id
         settings.check(channel)
@@ -318,6 +321,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             reply_adds += f'\nURL Init Image: ``{init_image.url}``'
         if adetailer is not None:
             reply_adds += f'\nADetailer: ``{adetailer}``'
+        if highres_fix != 'Disabled':
+            reply_adds += f'\nHighres Fix: ``{highres_fix}``'
         # try to convert batch to usable format
         batch_check = settings.batch_format(batch)
         batch = list(batch_check)
@@ -364,7 +369,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
             init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref)
-        
+
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
         user_queue_limit = settings.queue_check(ctx.author)
@@ -383,11 +388,31 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         if webui_is_offline:
             message_to_send += "\nNote: The model is currently offline. Your request won't be lost, it will be processed when it's back online !"
 
-       # check message length not exceeding 2000 chars
-        if len(message_to_send) > 2000:
-            excess_length = len(message_to_send) - 2000
-            truncated_prompt = simple_prompt[:len(simple_prompt) - excess_length - 5] + "..."
-            message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{truncated_prompt}``\nSteps: ``{steps}``{reply_adds}'
+        # Déterminez la longueur de base du message sans les prompts
+        base_message_length = len(f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ````\nSteps: ``{steps}``{reply_adds}')
+
+        # Calculez la longueur disponible pour les prompts en tenant compte de la limite de 2000 caractères
+        available_length_for_prompts = 2000 - base_message_length
+
+        # S'il n'y a pas assez d'espace pour les deux prompts, ajustez-les proportionnellement
+        if len(prompt) + len(negative_prompt) > available_length_for_prompts:
+            # Calculez la part de chaque prompt par rapport à la longueur totale des prompts
+            total_prompt_length = len(prompt) + len(negative_prompt)
+            prompt_ratio = len(prompt) / total_prompt_length
+            negative_prompt_ratio = len(negative_prompt) / total_prompt_length
+
+            # Allouez l'espace disponible proportionnellement
+            prompt_length_limit = int(available_length_for_prompts * prompt_ratio)
+            negative_prompt_length_limit = int(available_length_for_prompts * negative_prompt_ratio)
+
+            # Tronquez les prompts selon les limites calculées
+            prompt = prompt[:prompt_length_limit - 5] + "..." if len(prompt) > prompt_length_limit else prompt
+            negative_prompt = negative_prompt[:negative_prompt_length_limit - 5] + "..." if len(negative_prompt) > negative_prompt_length_limit else negative_prompt
+
+        # Reconstruisez le message avec les prompts potentiellement tronqués
+        message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{prompt}``\nSteps: ``{steps}``{reply_adds}'
+        if negative_prompt:
+            message_to_send += f'\nNegative Prompt: ``{negative_prompt}``'
          
         # send to discord
         #await ctx.channel.send(message_to_send)
@@ -412,7 +437,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     # generate the image
     def dream(self, event_loop: queuehandler.GlobalQueue.event_loop, queue_object: queuehandler.DrawObject):
     
-        # Start progression message
+        # start progression message
         run_coroutine_threadsafe(GlobalQueue.update_progress_message(queue_object), event_loop)
 
         try:
@@ -423,10 +448,11 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "sd_model_checkpoint": queue_object.data_model
             }
 
-            style_to_use = queue_object.styles
-            if "zavyyumexl" in queue_object.data_model.lower():
-                style_to_use = "Yume Style"
-                queue_object.negative_prompt = ""
+            #style_to_use = queue_object.styles
+            #if "zavyyumexl" in queue_object.data_model.lower():
+            #    style_to_use = "Yume Style"
+            #    queue_object.negative_prompt = ""
+            #    queue_object.sampler = "Euler a"
 
             payload = {
                 "prompt": queue_object.prompt,
@@ -443,7 +469,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "n_iter": queue_object.batch[0],
                 "batch_size": queue_object.batch[1],
                 "styles": [
-                    style_to_use
+                    queue_object.styles
                 ]
             }
 
@@ -459,13 +485,21 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 payload.update(img_payload)
 
             # update payload if high-res fix is used
+            original_width = queue_object.width
+            original_height = queue_object.height
+
             if queue_object.highres_fix != 'Disabled':
+                upscale_ratio = 1.3
+                queue_object.width = int(queue_object.width * upscale_ratio)
+                queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
-                    "hr_scale": 1,
-                    "hr_second_pass_steps": int(queue_object.steps)/2,
-                    "denoising_strength": queue_object.strength
+                    "hr_scale": upscale_ratio,
+                    "hr_second_pass_steps": int(queue_object.steps)/1.75,
+                    "denoising_strength": 0.5, #queue_object.strength,
+                    "hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
+                    "hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
                 }
                 payload.update(highres_payload)
 
@@ -478,18 +512,38 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             if queue_object.adetailer and queue_object.adetailer != "None":
                 model_mappings = {
                     "Faces": {
-                        "ad_model": "face_yolov8n.pt",
+                        "ad_model": "face_yolov8s.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 768,
-                        "ad_inpaint_height": 768,
+                        "ad_inpaint_width": 1024,
+                        "ad_inpaint_height": 1024,
+                        "ad_denoising_strength": 0.40,
+                        "ad_dilate_erode": 64,
+                        "ad_mask_max_ratio": 0.25,
+                        "ad_mask_blur": 12,
+                        "ad_inpaint_only_masked": True,
+                        "ad_inpaint_only_masked_padding": 32,
+                        #"ad_use_noise_multiplier": True,
+                        #"ad_noise_multiplier": 1.025,
+                        "ad_prompt": "(extremely detailed face:2), (extremely detailed eyes:2), (smooth skin:2), (extremely detailed teeth:2), " + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), lowres, heterochromia, (poorly drawn teeth, poorly drawn eyes:2), (big teeths:2)"
                     },
                     "Hands": {
-                        "ad_model": "hand_yolov8n.pt",
+                        "ad_model": "hand_yolov8s.pt",
                         "ad_use_inpaint_width_height": True,
-                        "ad_inpaint_width": 768,
-                        "ad_inpaint_height": 768,
+                        "ad_inpaint_width": 1024,
+                        "ad_inpaint_height": 1024,
+                        "ad_denoising_strength": 0.45,
+                        "ad_dilate_erode": 64,
+                        "ad_mask_max_ratio": 0.15,
+                        "ad_mask_blur": 12,
+                        "ad_inpaint_only_masked": True,
+                        "ad_inpaint_only_masked_padding": 32,
                         "ad_use_noise_multiplier": True,
-                        "ad_noise_multiplier": 1.05,
+                        "ad_noise_multiplier": 1.03,
+                        "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color" + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
+                        #"ad_controlnet_module": "openpose_full",
+                        #"ad_controlnet_model": "control_openpose-fp16 [72a4faf9]"
                     }
                 }
                 args = [True]
@@ -516,7 +570,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                                 "loopback": False,
                                 "low_vram": False,
                                 "module": "openpose_full",
-                                "model": "controlnetxlCNXL_thibaudOpenposeLora [72a4faf9]",
+                                "model": "control_openpose-fp16 [72a4faf9]",
                                 "resize_mode": "Resize and Fill",
                                 "weight": 1
                             }
@@ -541,7 +595,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             s = settings.authenticate_user()
 
             if queue_object.data_model != '':
-                s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
+                try:
+                    s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
+                except requests.exceptions.ConnectionError:
+                    print("Connection error. No response from API. (StableCog l.559)")
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
             else:
@@ -694,13 +751,14 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     queuehandler.process_post(
                         self, queuehandler.PostObject(
                             self, queue_object.ctx, content=content, file=file, embed='', view=view))
-            
+
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
-                if queue_object.poseref is not None:
-                    filename=f'{queue_object.seed}-1.png'
-                else:
-                    filename=f'{queue_object.seed}-{count}.png'
+                image = image.resize((original_width, original_height))
+                #if queue_object.poseref is not None:
+                #    filename=f'{queue_object.seed}-1.png'
+                #else:
+                filename=f'{queue_object.seed}-{count}.png'
                 file = add_metadata_to_image(image,str_parameters, filename)
                 queuehandler.process_post(
                     self, queuehandler.PostObject(
@@ -714,6 +772,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             embed = discord.Embed(title='txt2img failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
+        
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
 

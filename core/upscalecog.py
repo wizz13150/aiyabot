@@ -18,7 +18,6 @@ from core import viewhandler
 from core import settings
 from core import settingscog
 from core.queuehandler import GlobalQueue
-from core.leaderboardcog import LeaderboardCog
 
 
 class UpscaleCog(commands.Cog):
@@ -236,9 +235,6 @@ class UpscaleCog(commands.Cog):
             embed = discord.Embed(title='txt2img failed', description=f'{e}\n{traceback.print_exc()}',
                                   color=settings.global_var.embed_color)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
-
-        # update the leaderboard
-        LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Upscale_Count")
 
         # check each queue for any remaining tasks
         GlobalQueue.process_queue()
