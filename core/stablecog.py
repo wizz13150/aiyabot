@@ -488,7 +488,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             original_width = queue_object.width
             original_height = queue_object.height
 
-            if queue_object.highres_fix != 'Disabled':
+            if queue_object.highres_fix != 'Disabled' or queue_object.adetailer == 'Details++' :
                 upscale_ratio = 1.4
                 queue_object.width = int(queue_object.width * upscale_ratio)
                 queue_object.height = int(queue_object.height * upscale_ratio)
@@ -497,7 +497,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     "hr_upscaler": queue_object.highres_fix,
                     "hr_scale": upscale_ratio,
                     "hr_second_pass_steps": int(queue_object.steps)/1.75,
-                    "denoising_strength": 0.5 #, #queue_object.strength,
+                    "denoising_strength": 0.50 #, #queue_object.strength,
                     #"hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
                     #"hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
                 }
