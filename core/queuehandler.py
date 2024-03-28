@@ -136,7 +136,6 @@ class ProgressView(View):
             s.post(url=f'{settings.global_var.url}/sdapi/v1/interrupt')
             await interaction.response.edit_message(view=self)
         except Exception as e:
-            button.disabled = True
             await interaction.response.send_message("An error occurred: " + str(e), ephemeral=True)
 
     @discord.ui.button(
@@ -152,7 +151,6 @@ class ProgressView(View):
             s.post(url=f'{settings.global_var.url}/sdapi/v1/skip')
             await interaction.response.edit_message(view=self)
         except Exception as e:
-            button.disabled = True
             await interaction.response.send_message("An error occurred: " + str(e), ephemeral=True)
 
     @discord.ui.button(
@@ -164,9 +162,11 @@ class ProgressView(View):
             await interaction.response.send_message("You are not authorized to cancel jobs.", ephemeral=True)
             return
 
-        # delete jobs from user
-        GlobalQueue.queue = [job for job in GlobalQueue.queue if job.user_id != self.user_id or not isinstance(job, DrawObject)]
-
+        # delete Draws jobs from user
+        GlobalQueue.queue = [
+            job for job in GlobalQueue.queue
+            if not (isinstance(job, DrawObject) and job.user_id == self.user_id)
+        ]
 
         await interaction.response.send_message("All pending draw jobs from you have been cancelled.", ephemeral=True)
 
@@ -256,16 +256,16 @@ class GlobalQueue:
     async def update_progress_message(queue_object):
         async with GlobalQueue.progress_lock:
             ctx = getattr(queue_object, "ctx", None)
-            prompt = getattr(queue_object, "prompt", None)
+            #prompt = getattr(queue_object, "prompt", None)
 
             try:
-                if "prompts" in queue_object.deforum_settings:
+                if isinstance(queue_object, DeforumObject) and "prompts" in queue_object.deforum_settings:
                     prompt_value = queue_object.deforum_settings["prompts"]
                     prompt = str(prompt_value)
                 else:
-                    print("[DEBUG] 'Prompts' not found in deforum_settings.")
-            except AttributeError as e:
-                ...
+                    prompt = getattr(queue_object, "prompt", "No prompt")  # Utilisez un prompt générique si non disponible
+            except AttributeError:
+                prompt = "No prompt"
 
             # check for an existing progression message, if yes delete the previous one
             async for old_msg in ctx.channel.history(limit=25):
@@ -343,6 +343,10 @@ class GlobalQueue:
                                 job = "Batch 1 out of 1"
                             elif job.startswith("task"):
                                 job = "Job running locally by the owner"
+                            elif job == "(unknown)":
+                                job = "Ultimate Upscale"   
+                            elif job == "scripts_img2img":  
+                                job = "Prepare img2img script"                             
 
                             # check recent messages and Spam the bottom, like pinned
                             latest_message = await ctx.channel.history(limit=1).flatten()

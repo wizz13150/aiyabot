@@ -18,8 +18,8 @@ from core.leaderboardcog import LeaderboardCog
 
 class RatioButton(Button):
     FORMATS = [
-        "Portrait: 2:3 - 768x1280",
-        "Landscape: 3:2 - 1280x768",
+        "Portrait: 2:3 - 832x1216",
+        "Landscape: 3:2 - 1216x832",
         "Fullscreen: 4:3 - 1152x896",
         "Widescreen: 16:9 - 1344x768",
         "Ultrawide: 21:9 - 1536x640",
@@ -45,7 +45,7 @@ class ADetailerButton(Button):
     def __init__(self, parent_view):
         super().__init__(label="ADetailer", custom_id="adetailer", emoji="🎭", style=1)
         self.parent_view = parent_view
-        self.choices = ["None", "Faces", "Hands", "Faces+Hands"]
+        self.choices = ["None", "Faces", "Hands", "Faces+Hands", "Details++"]
         self.current_choice_index = 0  # Default is 'None'
 
     async def callback(self, interaction):
@@ -294,7 +294,7 @@ class GenerateView(View):
         self.styles_select = StylesSelect(styles_list)
         self.add_item(self.styles_select)
 
-        self.selected_orientation = "Portrait: 2:3 - 768x1280"
+        self.selected_orientation = "Portrait: 2:3 - 832x1216"
         self.selected_model = "ZavyChromaXL"
         self.hires = None
         self.adetailer = None
@@ -340,12 +340,13 @@ class GenerateView(View):
 
 class GenerateCog(commands.Cog):
     model_paths = {
-            #"WizzGPTV2": "core/WizzGPT2-v2",
-            #"Insomnia": "core/Insomnia",
-            #"WizzGPT": "core/WizzGPT2",
+            "WizzGPTV2": "core/WizzGPT2-v2",
+            "InsomniaV2": "core/Insomnia-v2",
+            "Insomnia": "core/Insomnia",
+            "WizzGPT": "core/WizzGPT2",
             "DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
-            "MagicPrompt-SD": "core/MagicPrompt-SD/"#,
-            #"Microsoft-Promptist": "core/Microsoft-Promptist",
+            "MagicPrompt-SD": "core/MagicPrompt-SD/",
+            "Microsoft-Promptist": "core/Microsoft-Promptist"#,
             #"Daspartho-Prompt-extend": "core/Daspartho-Prompt-extend", 
             #"LexicArt": "core/LexicArt", 
             #"MajinAI": "core/MajinAI", 
@@ -421,7 +422,7 @@ class GenerateCog(commands.Cog):
         self.current_model = model
         tokenizer = self.tokenizers[self.current_model]
         eos_token_id = tokenizer.eos_token_id
-        self.pipe = pipeline('text-generation', model=self.models[self.current_model], tokenizer=tokenizer, max_length=75, temperature=0.7, top_k=8, repetition_penalty=1.2, eos_token_id=eos_token_id)
+        self.pipe = pipeline('text-generation', model=self.models[self.current_model], tokenizer=tokenizer, max_length=75, temperature=0.7, top_k=8, repetition_penalty=1.2, eos_token_id=eos_token_id, num_beams=1)
 
         called_from_reroll = getattr(ctx, 'called_from_reroll', False)
         current_prompt = 0
