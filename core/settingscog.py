@@ -18,6 +18,9 @@ class SettingsCog(commands.Cog):
             model for model in settings.global_var.model_info
         ]
 
+    def get_available_styles(self):
+        return settings.global_var.style_names
+
     # do for any other lists that may exceed 25 values
     def sampler_autocomplete(self: discord.AutocompleteContext):
         return [

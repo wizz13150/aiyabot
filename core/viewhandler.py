@@ -34,10 +34,11 @@ input_tuple[0] = ctx
 [18] = epoch_time
 [19] = adetailer
 [20] = poseref
+[21] = ipadapter
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
                'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref']
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref', 'ipadapter']
 
 
 # the modal that is used for the 🖋 button
@@ -79,7 +80,7 @@ class DrawModal(Modal):
             InputText(
                 label='Keep seed? Delete to randomize',
                 style=discord.InputTextStyle.short,
-                value=original_seed,
+                value=str(original_seed),
                 required=False
             )
         )
@@ -219,7 +220,7 @@ class DrawModal(Modal):
                     return
             if 'adetailer:' in line:
                 value = line.split(':', 1)[1].strip()
-                valid_choices = ['None', 'Faces', 'Hands', 'Faces+Hands']
+                valid_choices = ['None', 'Faces', 'Hands', 'Faces+Hands', 'Details++']
                 if value in valid_choices:
                     pen[19] = value
                 else:
@@ -452,6 +453,52 @@ class DrawView(View):
         except Exception as e:
             print('The upscale button broke: ' + str(e))
             # if interaction fails, assume it's because aiya restarted (breaks buttons)
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
+
+    
+    @discord.ui.button(
+        custom_id="button_apply_details",
+        emoji="✨",
+        label="Apply Details++")
+    async def button_apply_details(self, button, interaction):
+        buttons_free = True
+        try:
+            # Vérification si l'action est réalisée par l'utilisateur qui a demandé l'image
+            if settings.global_var.restrict_buttons == 'True':
+                if interaction.user.id != self.input_tuple[0].author.id:
+                    buttons_free = False
+            if buttons_free:
+                # Mise à jour du tuple pour conserver la même seed et modifier ADetailer et Highres_fix
+                new_input = list(self.input_tuple)
+                new_input[19] = 'Details++'
+                new_input[15] = '4x_foolhardy_Remacri'
+                input_tuple = tuple(new_input)
+
+                print(f'Apply Details++ -- {interaction.user.name}#{interaction.user.discriminator} -- Prompt: {input_tuple[1]}')
+
+                # Configuration et ajout de la tâche dans la file d'attente
+                draw_dream = stablecog.StableCog(self)
+                user_queue_limit = settings.queue_check(interaction.user)
+                if queuehandler.GlobalQueue.dream_thread.is_alive():
+                    if user_queue_limit == "Stop":
+                        await interaction.response.send_message(content=f"Please wait! You're past your queue limit of {settings.global_var.queue_limit}.", ephemeral=True)
+                    else:
+                        queuehandler.GlobalQueue.queue.append(queuehandler.DrawObject(stablecog.StableCog(self), *input_tuple, DrawView(input_tuple)))
+                else:
+                    await queuehandler.process_dream(draw_dream, queuehandler.DrawObject(stablecog.StableCog(self), *input_tuple, DrawView(input_tuple)))
+
+                if user_queue_limit != "Stop":
+                    await interaction.response.send_message(
+                        f'<@{interaction.user.id}>, {settings.messages()}\nQueue: '
+                        f'``{len(queuehandler.GlobalQueue.queue)}`` - ``{input_tuple[1]}``'
+                        f'\nSame Seed:``{input_tuple[10]}``')
+            else:
+                await interaction.response.send_message("You can't use this button for others' images!", ephemeral=True)
+        except Exception as e:
+            print(f'The Apply Details++ button broke: {str(e)}')
+            # En cas d'échec de l'interaction, désactiver le bouton
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)

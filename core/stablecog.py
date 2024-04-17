@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import run_coroutine_threadsafe
 import base64
+import csv
 import discord
 import io
 import math
@@ -8,6 +9,7 @@ import random
 import requests
 import time
 import traceback
+from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 from PIL import Image, PngImagePlugin
 from discord import option
 from discord.ext import commands
@@ -24,8 +26,8 @@ from core.leaderboardcog import LeaderboardCog
 
 # ratios dic
 size_ratios = {
-    "Portrait: 2:3 - 768x1280": (768, 1280),
-    "Landscape: 3:2 - 1280x768": (1280, 768),
+    "Portrait: 2:3 - 832x1216": (832, 1216),
+    "Landscape: 3:2 - 1216x832": (1216, 832),
     "Fullscreen: 4:3 - 1152x896": (1152, 896),
     "Widescreen: 16:9 - 1344x768": (1344, 768),
     "Ultrawide: 21:9 - 1536x640": (1536, 640),
@@ -34,16 +36,59 @@ size_ratios = {
 }
 
 
+class GPT2ModelSingleton:
+    _instance = None
+    model = None
+    tokenizer = None
+    pipe = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+            cls._load_model()
+        return cls._instance
+
+    @classmethod
+    def _load_model(cls):
+        model_path = "core/WizzGPT2-v2"
+        cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        cls.model = AutoModelForCausalLM.from_pretrained(model_path)
+        print("Load WIZZGPTV2")
+        cls.pipe = pipeline('text-generation', model=cls.model, tokenizer=cls.tokenizer, max_length=75, temperature=1.1, top_k=24, repetition_penalty=1.35, eos_token_id=cls.tokenizer.eos_token_id, num_return_sequences=1, early_stopping=True)
+
+
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
     ctx_parse = discord.ApplicationContext
 
-    def __init__(self, bot):
+    def __init__(self, bot, called_from_button=False):
         self.bot = bot
+        # load the gpt2 model to use for random_prompt
+        if not called_from_button:
+            gpt2_singleton = GPT2ModelSingleton.get_instance()
+            self.pipe = gpt2_singleton.pipe
+        else:
+            self.pipe = None
 
     if len(settings.global_var.size_range) == 0:
         size_auto = discord.utils.basic_autocomplete(settingscog.SettingsCog.size_autocomplete)
     else:
         size_auto = None
+
+    async def generate_prompt_async(self, prompt: str):
+        if self.pipe is None:
+            gpt2_singleton = GPT2ModelSingleton.get_instance()
+            self.pipe = gpt2_singleton.pipe
+        loop = asyncio.get_running_loop()
+        res = await loop.run_in_executor(None, lambda: self.pipe(prompt))
+        generated_text = res[0]['generated_text']
+        return generated_text
+
+    def get_random_word(self, filename):
+        with open(filename, newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            chosen_line = random.choice(list(reader))
+            return chosen_line[0]
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -54,7 +99,14 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         'prompt',
         str,
         description='A prompt to condition the model with.',
-        required=True,
+        required=False,
+    )
+    @option(
+        'random_prompt',
+        str,
+        description='Generate a random image from a random prompt.',# Specify "True:x" for more prompts.',
+        required=False,
+        choices=["True"]
     )
     @option(
         'negative_prompt',
@@ -126,6 +178,13 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.style_autocomplete),
     )
     @option(
+        'random_style',
+        str,
+        description='Choose a style at random.',
+        required=False,
+        choices=["True"]
+    )
+    @option(
         'extra_net',
         str,
         description='Apply an extra network to influence the output. To set multiplier, add :# (# = 0.0 - 1.0)',
@@ -137,12 +196,18 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         str,
         description='Choose which details to improve: Faces, Hands, or both.',
         required=False,
-        choices=['Faces', 'Hands', 'Faces+Hands']
+        choices=['Faces', 'Hands', 'Faces+Hands', 'Details++']
     )
     @option(
         'poseref',
         str,
         description='The pose reference image URL.',
+        required=False,
+    )
+    @option(
+        'ipadapter',
+        str,
+        description='The reference image URL for IPAdapter.',
         required=False,
     )
     @option(
@@ -183,7 +248,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         required=False,
     )
     async def dream_handler(self, ctx: discord.ApplicationContext, *,
-                            prompt: str, negative_prompt: str = None,
+                            prompt: str,
+                            random_prompt: Optional[bool] = False,
+                            negative_prompt: str = None,
                             data_model: Optional[str] = None,
                             steps: Optional[int] = None,
                             width: Optional[int] = None, height: Optional[int] = None,
@@ -192,6 +259,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             sampler: Optional[str] = None,
                             seed: Optional[int] = -1,
                             styles: Optional[str] = None,
+                            random_style: Optional[bool] = False,
                             extra_net: Optional[str] = None,
                             adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
@@ -200,9 +268,49 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             init_image: Optional[discord.Attachment] = None,
                             init_url: Optional[str] = None,
                             poseref: Optional[discord.Attachment] = None,
+                            ipadapter: Optional[discord.Attachment] = None,
                             batch: Optional[str] = None):
 
         called_from_button = getattr(ctx, 'called_from_button', False)
+
+        # check if one of prompt or random_prompt option is enabled
+        if not prompt and not random_prompt:
+            await ctx.respond("Please provide a prompt or enable random prompt generation.", ephemeral=True)
+            return
+
+        # generate a random prompt if random_prompt is True
+        deferred = False
+        if random_prompt == "True":
+            await ctx.defer()            
+            num_prompts = 1
+
+            # manage True:x
+            #if ':' in random_prompt:
+            #    try:
+            #        _, num_str = random_prompt.split(':', 1)
+            #        num_prompts = int(num_str)
+
+            #        if num_prompts < 1 or num_prompts > 10:
+            #            await ctx.respond("Le nombre de prompts doit être entre 1 et 10.", ephemeral=True)
+            #            return
+            #    except ValueError:
+            #        await ctx.respond("Invalid format for random prompt number. Use /draw random_prompt:true:x where x is a number.", ephemeral=True)
+            #        return
+            
+            for _ in range(num_prompts):
+                start_prompt = self.get_random_word('resources/random_prompts.csv')
+                generated_prompt_task = asyncio.create_task(self.generate_prompt_async(start_prompt))
+                generated_prompt = await generated_prompt_task
+                prompt = generated_prompt
+                deferred = True
+
+        if random_style == "True":
+            settings_cog = self.bot.get_cog('SettingsCog')
+            if settings_cog:
+                style_dict = settings_cog.get_available_styles()
+                chosen_style_key = random.choice(list(style_dict.keys())) if style_dict else None
+                if chosen_style_key:
+                    styles = chosen_style_key
 
         # update defaults with any new defaults from settingscog
         channel = '% s' % ctx.channel.id
@@ -316,8 +424,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 float(strength)
                 reply_adds += f'\nStrength: ``{strength}``'
             except(Exception,):
-                reply_adds += f"\nStrength can't be ``{strength}``! Setting to default of `0.75`."
-                strength = 0.75
+                reply_adds += f"\nStrength can't be ``{strength}``! Setting to default of `0.5`."
+                strength = 0.5
             reply_adds += f'\nURL Init Image: ``{init_image.url}``'
         if adetailer is not None:
             reply_adds += f'\nADetailer: ``{adetailer}``'
@@ -362,13 +470,15 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             reply_adds += f'\nCLIP skip: ``{clip_skip}``'
         if poseref is not None:
             reply_adds += f'\nPose Reference URL: ``{poseref}``'
+        if ipadapter is not None:
+            reply_adds += f'\nIPAdapter Reference URL: ``{ipadapter}``'
 
         epoch_time = int(time.time())
 
         # set up tuple of parameters to pass into the Discord view
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
-            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref)
+            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter)
 
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
@@ -388,37 +498,32 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         if webui_is_offline:
             message_to_send += "\nNote: The model is currently offline. Your request won't be lost, it will be processed when it's back online !"
 
-        # Déterminez la longueur de base du message sans les prompts
+        # check prompts length
         base_message_length = len(f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ````\nSteps: ``{steps}``{reply_adds}')
-
-        # Calculez la longueur disponible pour les prompts en tenant compte de la limite de 2000 caractères
         available_length_for_prompts = 2000 - base_message_length
 
-        # S'il n'y a pas assez d'espace pour les deux prompts, ajustez-les proportionnellement
+        # truncate prompt if needed
         if len(prompt) + len(negative_prompt) > available_length_for_prompts:
-            # Calculez la part de chaque prompt par rapport à la longueur totale des prompts
             total_prompt_length = len(prompt) + len(negative_prompt)
             prompt_ratio = len(prompt) / total_prompt_length
             negative_prompt_ratio = len(negative_prompt) / total_prompt_length
 
-            # Allouez l'espace disponible proportionnellement
             prompt_length_limit = int(available_length_for_prompts * prompt_ratio)
             negative_prompt_length_limit = int(available_length_for_prompts * negative_prompt_ratio)
 
-            # Tronquez les prompts selon les limites calculées
             prompt = prompt[:prompt_length_limit - 5] + "..." if len(prompt) > prompt_length_limit else prompt
             negative_prompt = negative_prompt[:negative_prompt_length_limit - 5] + "..." if len(negative_prompt) > negative_prompt_length_limit else negative_prompt
 
-        # Reconstruisez le message avec les prompts potentiellement tronqués
+        # reconstruc with truncated prompts
         message_to_send = f'<@{ctx.author.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}`` - ``{prompt}``\nSteps: ``{steps}``{reply_adds}'
-        if negative_prompt:
-            message_to_send += f'\nNegative Prompt: ``{negative_prompt}``'
+        #if negative_prompt:
+        #    message_to_send += f'\nNegative Prompt: ``{negative_prompt}``'
          
         # send to discord
-        #await ctx.channel.send(message_to_send)
         if called_from_button:
-            #await ctx.send_followup(message_to_send)
             await ctx.channel.send(message_to_send)
+        elif deferred:
+            await ctx.send_followup(content=message_to_send)
         else:
             await ctx.send_response(message_to_send)
 
@@ -485,21 +590,24 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 payload.update(img_payload)
 
             # update payload if high-res fix is used
-            original_width = queue_object.width
-            original_height = queue_object.height
+            #original_width = queue_object.width
+            #original_height = queue_object.height
+
+            if queue_object.adetailer == 'Details++' and queue_object.highres_fix == 'Disabled':
+                queue_object.highres_fix = '4x_foolhardy_Remacri'
 
             if queue_object.highres_fix != 'Disabled':
-                upscale_ratio = 1.3
+                upscale_ratio = 1.4
                 queue_object.width = int(queue_object.width * upscale_ratio)
                 queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
                     "hr_scale": upscale_ratio,
-                    "hr_second_pass_steps": int(queue_object.steps)/1.75,
-                    "denoising_strength": 0.5, #queue_object.strength,
-                    "hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
-                    "hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
+                    "hr_second_pass_steps": int(queue_object.steps)/1.3,
+                    "denoising_strength": 0.52 #, #queue_object.strength,
+                    #"hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
+                    #"hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
                 }
                 payload.update(highres_payload)
 
@@ -512,20 +620,20 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             if queue_object.adetailer and queue_object.adetailer != "None":
                 model_mappings = {
                     "Faces": {
-                        "ad_model": "face_yolov8s.pt",
+                        "ad_model": "face_yolov8m.pt",
                         "ad_use_inpaint_width_height": True,
                         "ad_inpaint_width": 1024,
                         "ad_inpaint_height": 1024,
                         "ad_denoising_strength": 0.40,
-                        "ad_dilate_erode": 64,
+                        "ad_dilate_erode": 4,
                         "ad_mask_max_ratio": 0.25,
-                        "ad_mask_blur": 12,
+                        "ad_mask_blur": 4,
                         "ad_inpaint_only_masked": True,
                         "ad_inpaint_only_masked_padding": 32,
                         #"ad_use_noise_multiplier": True,
                         #"ad_noise_multiplier": 1.025,
-                        "ad_prompt": "(extremely detailed face:2), (extremely detailed eyes:2), (smooth skin:2), (extremely detailed teeth:2), " + queue_object.prompt,
-                        "ad_negative_prompt": "(low quality:2), lowres, heterochromia, (poorly drawn teeth, poorly drawn eyes:2), (big teeths:2)"
+                        "ad_prompt": "(extremely detailed face), (fine detailed eyes), raytracing, subsurface scattering, hyperrealistic, extreme skin details, skin pores, deep shadows, subsurface scattering, amazing textures, filmic, macro, shallow dof, shallow depth of field, beautiful eyes, extremely detailed pupil, " + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), (asymmetric eyes, bad eyes:2), lowres, (heterochromia:2)"
                     },
                     "Hands": {
                         "ad_model": "hand_yolov8s.pt",
@@ -533,51 +641,77 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         "ad_inpaint_width": 1024,
                         "ad_inpaint_height": 1024,
                         "ad_denoising_strength": 0.45,
-                        "ad_dilate_erode": 64,
+                        "ad_dilate_erode": 4,
                         "ad_mask_max_ratio": 0.15,
-                        "ad_mask_blur": 12,
+                        "ad_mask_blur": 4,
                         "ad_inpaint_only_masked": True,
                         "ad_inpaint_only_masked_padding": 32,
-                        "ad_use_noise_multiplier": True,
+                        "ad_use_noise_multiplier": False,
                         "ad_noise_multiplier": 1.03,
-                        "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color" + queue_object.prompt,
-                        "ad_negative_prompt": "(low quality:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
+                        "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color, " + queue_object.prompt,
+                        "ad_negative_prompt": "(low quality:2), (malformed:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
                         #"ad_controlnet_module": "openpose_full",
                         #"ad_controlnet_model": "control_openpose-fp16 [72a4faf9]"
                     }
                 }
                 args = [True]
+
                 if queue_object.adetailer == "Faces+Hands":
                     args.extend([model_mappings["Faces"], model_mappings["Hands"]])
+                elif queue_object.adetailer == "Details++":
+                    args.extend([model_mappings["Faces"], model_mappings["Hands"]])#, model_mappings["Details"]])
                 else:
                     args.append(model_mappings[queue_object.adetailer])
+
                 alwayson_scripts_settings = {
                     "ADetailer": {
                         "args": args
                     }
                 }
 
-            # add poseref settings
+            controlnet_args = []
+
+            # Vérification et ajout de la configuration pour poseref
             if queue_object.poseref is not None:
                 pimage = base64.b64encode(requests.get(queue_object.poseref, stream=True).content).decode('utf-8')
-                controlnet_payload = {
-                    "controlnet": {
-                        "args": [
-                            {
-                                "input_image": 'data:image/png;base64,' + pimage,
-                                "control_mode": "Balanced",
-                                "pixel_perfect": True,
-                                "loopback": False,
-                                "low_vram": False,
-                                "module": "openpose_full",
-                                "model": "control_openpose-fp16 [72a4faf9]",
-                                "resize_mode": "Resize and Fill",
-                                "weight": 1
-                            }
-                        ]
-                    }
+                poseref_payload = {
+                    "input_image": 'data:image/png;base64,' + pimage,
+                    "control_mode": "Balanced",
+                    "pixel_perfect": True,
+                    "loopback": False,
+                    "low_vram": True,
+                    "module": "openpose_full",
+                    "model": "control_openpose-fp16 [72a4faf9]",
+                    "resize_mode": "Resize and Fill",
+                    "weight": 1,
+                    "preprocessor_res": 768
                 }
-                alwayson_scripts_settings.update(controlnet_payload)
+                controlnet_args.append(poseref_payload)
+
+            # Vérification et ajout de la configuration pour ipadapter
+            if queue_object.ipadapter is not None:
+                pimage = base64.b64encode(requests.get(queue_object.ipadapter, stream=True).content).decode('utf-8')
+                ipadapter_payload = {
+                    "input_image": 'data:image/png;base64,' + pimage,
+                    "control_mode": "My prompt is more important",
+                    "pixel_perfect": True,
+                    "loopback": False,
+                    "low_vram": True,
+                    "module": "ip-adapter_clip_sdxl",
+                    "model": "IpAdapter [af81326a]",
+                    "resize_mode": "Resize and Fill",
+                    "weight": 0.70 #,
+                    #"preprocessor_res": 768,
+                    #"guidance_start": 0.0,
+                    #"guidance_end": 1.0
+                }
+                controlnet_args.append(ipadapter_payload)
+
+            # Ajout des configurations controlnet au alwayson_scripts_settings s'il y a des éléments dans controlnet_args
+            if controlnet_args:
+                alwayson_scripts_settings["controlnet"] = {
+                    "args": controlnet_args
+                }
 
             # update payload with override_settings
             override_payload = {
@@ -598,12 +732,177 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 try:
                     s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
                 except requests.exceptions.ConnectionError:
-                    print("Connection error. No response from API. (StableCog l.559)")
+                    print("Connection error. No response from API. (StableCog l.601)")
+
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
             else:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/txt2img', json=payload)
+
             response_data = response.json()
+
+            # Ultimate SD Upscale payload
+            if queue_object.adetailer == 'Details++' and response.ok:
+                generated_images = response_data.get("images")
+                upscaled_images_data = []
+                upscaled_images_metadata = []
+
+                # adjust values
+                custom_scale, denoising_strength = (2.1, 0.52) if queue_object.adetailer == 'Details++' else (1, 0.10)
+                tile_width = int(queue_object.width * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.width * custom_scale)
+                tile_height = int(queue_object.height * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.height * custom_scale)
+                queue_object.width = int(queue_object.width * custom_scale)
+                queue_object.height = int(queue_object.height * custom_scale)
+
+                for index, generated_image_base64 in enumerate(generated_images):
+                    original_image = Image.open(io.BytesIO(base64.b64decode(generated_image_base64)))
+                    original_metadata = PngImagePlugin.PngInfo()
+                    for k, v in original_image.info.items():
+                        original_metadata.add_text(k, v)
+                    upscaled_images_metadata.append(original_metadata)
+
+                    # adjust steps
+                    steps_as_int = int(queue_object.steps)
+                    adjusted_steps = int(steps_as_int * 1.6)
+
+                    upscale_payload = {
+                        "prompt": queue_object.prompt,
+                        "negative_prompt": queue_object.negative_prompt,
+                        "steps": adjusted_steps,
+                        "cfg_scale": queue_object.guidance_scale,
+                        "sampler_index": queue_object.sampler,
+                        "seed": queue_object.seed,
+                        "denoising_strength": denoising_strength,
+                        "script_name": "ultimate sd upscale",
+                        "script_args": [
+                            None,  # _ (not used)
+                            tile_width,  # tile_width
+                            tile_height,  # tile_height
+                            64,  # mask_blur
+                            256,  # padding
+                            64,  # seams_fix_width
+                            0.30,  # seams_fix_denoise
+                            256,  # seams_fix_padding
+                            5,  # upscaler_index
+                            True,  # save_upscaled_image a.k.a Upscaled
+                            0,  # redraw_mode
+                            False,  # save_seams_fix_image a.k.a Seams fix
+                            8,  # seams_fix_mask_blur
+                            0,  # seams_fix_type
+                            1,  # target_size_type
+                            queue_object.width,  # custom_width
+                            queue_object.height,  # custom_height
+                            custom_scale  # custom_scale
+                        ],
+                        "init_images": [
+                            generated_image_base64
+                        ]
+                    }
+
+                    #soft_inpainting_payload = {
+                    #    "Soft inpainting": True,
+                    #    "Schedule bias": 1,
+                    #    "Preservation strength": 0.5,
+                    #    "Transition contrast boost": 4,
+                    #    "Mask influence": 0,
+                    #    "Difference threshold": 0.5,
+                    #    "Difference contrast": 2,
+                    #}
+                    #upscale_payload["alwayson_scripts"] = {"soft inpainting": {"args": [soft_inpainting_payload]}}
+
+                    # Details ++
+                    if queue_object.adetailer == 'Details++':
+                        combined_alwayson_scripts_payload = {
+                            "ADetailer": {
+                                "args": [
+                                    True,
+                                    False,
+                                    {
+                                        "ad_model": "face_yolov8m.pt",
+                                        "ad_use_inpaint_width_height": True,
+                                        "ad_inpaint_width": 1024,
+                                        "ad_inpaint_height": 1024,
+                                        "ad_denoising_strength": 0.36,
+                                        "ad_dilate_erode": 4,
+                                        "ad_mask_max_ratio": 0.25,
+                                        "ad_mask_blur": 4,
+                                        "ad_inpaint_only_masked": True,
+                                        "ad_inpaint_only_masked_padding": 64,
+                                        "ad_x_offset": 24,
+                                        "ad_y_offset": 24,
+                                        "ad_prompt": "(extremely detailed face), (round pupils,  detailed eyes), raytracing, subsurface scattering, hyperrealistic, extreme skin details, skin pores, deep shadows, subsurface scattering, amazing textures, filmic, macro, shallow dof, shallow depth of field, beautiful eyes, extremely detailed pupil, " + queue_object.prompt,
+                                        "ad_negative_prompt": "(low quality:2), (asymmetric eyes, bad eyes:2), lowres, (heterochromia:2)"
+                                    },
+                                    {
+                                        "ad_model": "hand_yolov8s.pt",
+                                        "ad_use_inpaint_width_height": True,
+                                        "ad_inpaint_width": 1024,
+                                        "ad_inpaint_height": 1024,
+                                        "ad_denoising_strength": 0.45,
+                                        "ad_dilate_erode": 4,
+                                        "ad_mask_max_ratio": 0.15,
+                                        "ad_mask_blur": 4,
+                                        "ad_inpaint_only_masked": True,
+                                        "ad_inpaint_only_masked_padding": 64,
+                                        "ad_x_offset": 24,
+                                        "ad_y_offset": 24,
+                                        #"ad_use_noise_multiplier": True,
+                                        #"ad_noise_multiplier": 1.03,
+                                        "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color, " + queue_object.prompt,
+                                        "ad_negative_prompt": "(low quality:2), (malformed:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
+                                    }#,
+                                    #{
+                                    #    "ad_model": "yolov8x-oiv7.pt",
+                                    #    "ad_model_classes": "",
+                                    #    "ad_use_inpaint_width_height": True,
+                                    #    "ad_inpaint_width": 1024,
+                                    #    "ad_inpaint_height": 1024,
+                                    #    "ad_denoising_strength": 0.32,
+                                    #    "ad_dilate_erode": 4,
+                                    #    "ad_mask_max_ratio": 0.75,
+                                    #    "ad_mask_blur": 4,
+                                    #    "ad_inpaint_only_masked": True,
+                                    #    "ad_inpaint_only_masked_padding": 96,
+                                    #    #"ad_use_noise_multiplier": True,
+                                    #    #"ad_noise_multiplier": 1.03,
+                                    #    "ad_prompt": "(extremely detailed:2), " + queue_object.prompt,
+                                    #    #"ad_negative_prompt": "(low quality:2), (malformed:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
+                                    #}
+                                ]
+                            }
+                        }
+
+                        if queue_object.highres_fix != 'Disabled':
+                            soft_inpainting_payload = {
+                                "Soft inpainting": True,
+                                "Schedule bias": 1,
+                                "Preservation strength": 0.5,
+                                "Transition contrast boost": 4,
+                                "Mask influence": 0,
+                                "Difference threshold": 0.5,
+                                "Difference contrast": 2,
+                            }
+                            combined_alwayson_scripts_payload["soft inpainting"] = {"args": [soft_inpainting_payload]}
+
+                        upscale_payload["alwayson_scripts"] = combined_alwayson_scripts_payload
+
+                    # Send payload to img2img
+                    upscale_response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=upscale_payload)
+                    if upscale_response.ok:
+                        upscale_response_data = upscale_response.json()
+                        upscaled_images = upscale_response_data.get("images")
+                        for upscaled_image_base64 in upscaled_images:
+                            upscaled_image = Image.open(io.BytesIO(base64.b64decode(upscaled_image_base64)))
+                            metadata = upscaled_images_metadata[index]
+                            buffered = io.BytesIO()
+                            upscaled_image.save(buffered, format="PNG", pnginfo=metadata)
+                            upscaled_image_with_metadata_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                            upscaled_images_data.append(upscaled_image_with_metadata_base64)
+                    else:
+                        print("Error while upscaling with ultimate_sd_upscale")
+
+                response_data["images"] = upscaled_images_data
+
             end_time = time.time()
 
             # create safe/sanitized filename
@@ -682,14 +981,14 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
                 settings.stats_count(1)
 
-                # increment seed for view when using batch
+                # increment epoch_time for view when using batch
                 if count != len(image_data):
-                    batch_seed = list(queue_object.view.input_tuple)
-                    batch_seed[10] += 1
-                    new_tuple = tuple(batch_seed)
+                    new_epoch = list(queue_object.view.input_tuple)
+                    new_epoch[18] = int(time.time())
+                    new_tuple = tuple(new_epoch)
                     queue_object.view.input_tuple = new_tuple
 
-                if queue_object.poseref is not None:
+                if queue_object.poseref is not None or queue_object.ipadapter is not None:
                     break
 
             # progression flag, job done
@@ -754,7 +1053,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
-                image = image.resize((original_width, original_height))
+                image = image.resize((queue_object.width, queue_object.height))
                 #if queue_object.poseref is not None:
                 #    filename=f'{queue_object.seed}-1.png'
                 #else:
