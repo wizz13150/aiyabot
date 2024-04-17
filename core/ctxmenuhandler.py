@@ -69,7 +69,7 @@ async def parse_image_info(ctx, image_url, command):
         # initialize extra params
         steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
         style, adetailer, highres_fix, clip_skip = '', None, '', ''
-        strength, poseref, has_init_url = '', '', False
+        strength, poseref, ipadapter, has_init_url = '', '', '', False
         if command == 'button' and ctx is not None:
             has_init_url = True
 
@@ -115,6 +115,8 @@ async def parse_image_info(ctx, image_url, command):
                 clip_skip = line.split(': ', 1)[1]
             if 'Pose Reference: ' in line:
                 poseref = line.split(': ', 1)[1]
+            if 'IPAdapter Reference: ' in line:
+                ipadapter = line.split(': ', 1)[1]
             if 'Denoising strength: ' in line:
                 strength = line.split(': ', 1)[1]
 
@@ -191,6 +193,9 @@ async def parse_image_info(ctx, image_url, command):
         if poseref:
             copy_command += f' poseref:{poseref}'
             extra_params += f'\nPose Reference URL: ``{poseref}``'
+        if ipadapter:
+            copy_command += f' ipadapter:{ipadapter}'
+            extra_params += f'\nIPAdapter Reference URL: ``{ipadapter}``'
 
         embed.add_field(name=f'Command for copying', value=f'', inline=False)
         embed.set_footer(text=copy_command)

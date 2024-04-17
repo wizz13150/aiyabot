@@ -34,10 +34,11 @@ input_tuple[0] = ctx
 [18] = epoch_time
 [19] = adetailer
 [20] = poseref
+[21] = ipadapter
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
                'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref']
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref', 'ipadapter']
 
 
 # the modal that is used for the 🖋 button
