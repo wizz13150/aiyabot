@@ -111,7 +111,9 @@ class DrawModal(Modal):
     async def callback(self, interaction: discord.Interaction):
         # update the tuple with new prompts
         pen = list(self.input_tuple)
-        pen[2] = pen[2].replace(pen[1], self.children[0].value)
+        # dedup ensures that if user added lora/hypernet manually to edited prompt
+        # it is not duplicated from previous "non-simple" prompt on replacement
+        pen[2] = settings.extra_net_dedup(pen[2].replace(pen[1], self.children[0].value))
         pen[1] = self.children[0].value
         pen[3] = self.children[1].value
 
@@ -133,7 +135,7 @@ class DrawModal(Modal):
         # if extra network is used, find the multiplier
         if pen[17]:
             if pen[17] in pen[2]:
-                net_multi = re.search(f'{pen[17]}:(.*)>', pen[2]).group(1)
+                net_multi = re.search(f'<lora:{re.escape(pen[17])}:(.*?)>', pen[2]).group(1)
 
         if settings.global_var.size_range:
             max_size = settings.global_var.size_range
@@ -553,7 +555,8 @@ class DeleteView(View):
     async def delete(self, button, interaction):
         try:
             # check if the output is from the person who requested it
-            if interaction.user.id == self.input_tuple[0].author.id:
+            user_id, user_name = settings.fuzzy_get_id_name(self.input_tuple[0])
+            if interaction.user.id == user_id:
                 await interaction.message.delete()
             else:
                 await interaction.response.send_message("You can't delete other people's images!", ephemeral=True)
