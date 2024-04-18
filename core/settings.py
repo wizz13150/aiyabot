@@ -63,8 +63,9 @@ negative_prompt_prefix = []
 
 
 # the fallback channel defaults template for AIYA if nothing is set
+prompt_prefix = ""
 negative_prompt = "(worst quality:2), (low quality:2), (normal quality:2), lowres, easynegative, signature, watermark, username, cropped"
-data_model = "Default(Lyriel)"
+data_model = "ZavyChromaXL"
 steps = 33
 max_steps = 100
 width = 832
@@ -125,6 +126,7 @@ class GlobalVar:
     prompt_ignore_list = []
     display_ignored_words = "False"
     negative_prompt_prefix = []
+    prompt_prefix = ""
 
 
 global_var = GlobalVar()
@@ -153,28 +155,34 @@ def batch_format(batch_string):
 
 def prompt_mod(prompt, negative_prompt):
     clean_negative_prompt = negative_prompt
+    prompt_prefix = global_var.prompt_prefix
+    #print(f'Prompt modification. Prompt_prefix = {prompt_prefix}')    
     # if any banned words are in prompt, return immediately
     if global_var.prompt_ban_list:
         for x in global_var.prompt_ban_list:
             x = str(x.lower())
             if x in prompt.lower():
-                return "Stop", x
+                return "Stop", x    
     # otherwise mod the prompt/negative prompt
-    if global_var.prompt_ignore_list or global_var.negative_prompt_prefix:
+    if global_var.prompt_ignore_list or global_var.negative_prompt_prefix or global_var.prompt_prefix:
         for y in global_var.prompt_ignore_list:
             y = str(y.lower())
             if y in prompt.lower():
-                prompt = prompt.replace(y, "")
+                prompt = prompt.replace(y, "")        
         prompt = ' '.join(prompt.split())
         if prompt == '':
-            prompt = ' '
+            prompt = ' '        
         for z in global_var.negative_prompt_prefix:
             z = str(z.lower())
             if z in negative_prompt.lower():
                 clean_negative_prompt = clean_negative_prompt.replace(z, "")
             else:
-                negative_prompt = f"{z} {negative_prompt}"
-        return "Mod", prompt, negative_prompt.strip(), clean_negative_prompt.strip()
+                negative_prompt = f"{z} {negative_prompt}"        
+        # add prompt_prefix to the prompt
+        if prompt_prefix and not prompt.lower().startswith(prompt_prefix):
+            prompt = f"{prompt_prefix}, {prompt}"
+            #print(f'Prompt après modification. Prompt = {prompt}')        
+        return "Mod", prompt.strip(), negative_prompt.strip(), clean_negative_prompt.strip()    
     return "None"
 
 
@@ -343,6 +351,8 @@ def read(channel_id):
                 pass
             with open(path + channel_id + '.json', 'w') as configfile2:
                 json.dump(settings, configfile2, indent=1)
+        
+        global_var.prompt_prefix = settings.get('prompt_prefix', "").strip()  # Assurez-vous qu'il est chargé comme une chaîne propre
 
     return settings
 
@@ -563,6 +573,7 @@ def populate_global_vars():
     global_var.prompt_ignore_list = [x for x in config['prompt_ignore_list']]
     global_var.display_ignored_words = config['display_ignored_words']
     global_var.negative_prompt_prefix = [x for x in config['negative_prompt_prefix']]
+    global_var.prompt_prefix = [x for x in config['prompt_prefix']]
     # slash command doesn't update this dynamically. Changes to size need a restart.
     global_var.size_range = range(192, config['max_size'] + 8, 8)
     if len(global_var.size_range) > 25:

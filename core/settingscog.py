@@ -75,6 +75,12 @@ class SettingsCog(commands.Cog):
         required=False,
     )
     @option(
+        'prompt_prefix', 
+        str, 
+        description='Add a prefix to the prompt for image generation.', 
+        required=False
+    )    
+    @option(
         'n_prompt',
         str,
         description='Set default negative prompt for the channel (put "reset" to return to empty prompt)',
@@ -197,6 +203,7 @@ class SettingsCog(commands.Cog):
     )
     async def settings_handler(self, ctx,
                                current_settings: Optional[bool] = True,
+                               prompt_prefix: Optional[str] = None,
                                n_prompt: Optional[str] = None,
                                data_model: Optional[str] = None,
                                steps: Optional[int] = None,
@@ -248,6 +255,11 @@ class SettingsCog(commands.Cog):
             elif len(cur_n_prompt) > 1024:
                 cur_n_prompt = f'{cur_n_prompt[:1010]}....'
             embed.add_field(name=f'Current negative prompt', value=f'``{cur_n_prompt}``', inline=True)
+
+        if prompt_prefix is not None:
+            settings.update(channel, 'prompt_prefix', prompt_prefix)
+            new += f'\nPrompt Prefix: ``"{prompt_prefix}"``'
+            set_new = True
 
         # run function to update global variables
         if refresh:
