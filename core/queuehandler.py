@@ -314,6 +314,7 @@ class GlobalQueue:
                             sampling_steps = data['state']['sampling_steps']
                             queue_size = len(GlobalQueue.queue)
 
+                            image_file = None
                             if data["current_image"] and data["current_image"].strip():
                                 try:
                                     image_data = base64.b64decode(data["current_image"])
@@ -323,21 +324,20 @@ class GlobalQueue:
                                     else:
                                         image = Image.open(io.BytesIO(image_data))
 
-                                        # send a smaller image
+                                        # Envoyer une image de taille réduite
                                         new_width = int(image.width * 0.85)
                                         new_height = int(image.height * 0.85)
                                         image = image.resize((new_width, new_height), Image.ANTIALIAS)
 
                                         with contextlib.ExitStack() as stack:
                                             buffer = stack.enter_context(io.BytesIO())
-                                            image.save(buffer, 'PNG')
+                                            image.save(buffer, 'JPEG')
                                             buffer.seek(0)
-                                            file = discord.File(fp=buffer, filename=f'{queue_object.seed}.png')
+                                            image_file = discord.File(fp=buffer, filename=f'{queue_object.seed}.jpeg')
                                 except Exception as e:
-                                    file = None
+                                    image_file = None
                             else:
                                 await asyncio.sleep(1)
-                                file = None
 
                             # adjust job output to the running task
                             if job == "scripts_txt2img":
@@ -360,12 +360,9 @@ class GlobalQueue:
                             embed = discord.Embed(title=f"──── Running Job Progression ────", 
                                                 description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
                                                 color=discord.Color.random())
-                            embed.set_image(url=f"attachment://{queue_object.seed}.png")
+                            embed.set_image(url=f"attachment://{queue_object.seed}.jpeg")
 
-                            if file is None:
-                                await progress_msg.edit(embed=embed, view=view)
-                            else:
-                                await progress_msg.edit(embed=embed, file=file, view=view)
+                            await progress_msg.edit(embed=embed, file=image_file, view=view)
 
                             # wait 2 or 5 to not be rate limited by discord
                             if isinstance(queue_object, DrawObject):

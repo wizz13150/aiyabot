@@ -261,8 +261,8 @@ class InfoView(View):
                               value="This command makes a caption for your image. A standard caption is generated with normal **phrasing**, or tags can be used to generate a list of keywords.")
         embed_tips1.add_field(name="/upscale command",
                               value="A simple command to upscale your image! You can upscale up to 4x at a time.")
-        embed_tips1.add_field(name="/meta command",
-                              value="This command is used to extract metadata from an image. You can provide an image either by uploading it directly (`init_image`) or by providing a URL (`init_url`).")
+        #embed_tips1.add_field(name="/meta command",
+        #                      value="This command is used to extract metadata from an image. You can provide an image either by uploading it directly (`init_image`) or by providing a URL (`init_url`).")
         embed_tips1.add_field(name="/leaderboard command",
                               value="This command displays the leaderboard of users based on their interactions with the bot. It shows the top users by the number of images they generated.")
         embed_tips1.add_field(name="/stats command",
