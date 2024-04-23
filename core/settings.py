@@ -66,18 +66,19 @@ negative_prompt_prefix = []
 prompt_prefix = ""
 negative_prompt = "(worst quality:2), (low quality:2), (normal quality:2), lowres, easynegative, signature, watermark, username, cropped"
 data_model = "ZavyChromaXL"
-steps = 33
+steps = 30
 max_steps = 100
 width = 832
 height = 1216
-guidance_scale = "8.0"
-sampler = "DPM++ 2M SDE Karras"
+guidance_scale = "6.0"
+sampler = "DPM++ 3M SDE"
+scheduler = "automatic"
 style = "None"
 highres_fix = "Disabled"
 clip_skip = 1
 hypernet = "None"
 hyper_multi = "0.85"
-lora = "Details"
+lora = "None"
 lora_multi = "0.85"
 strength = "0.75"
 batch = "1,1"
@@ -109,6 +110,7 @@ class GlobalVar:
     size_range = range(192, 1088, 8)
     size_range_exceed = None
     sampler_names = []
+    scheduler_names = []
     style_names = {}
     embeddings_1 = []
     embeddings_2 = []
@@ -317,6 +319,7 @@ def generate_template(template_pop, config):
     template_pop['height'] = config['height']
     template_pop['guidance_scale'] = config['guidance_scale']
     template_pop['sampler'] = config['sampler']
+    template_pop['scheduler'] = config['scheduler']
     template_pop['style'] = config['style']
     template_pop['highres_fix'] = config['highres_fix']
     template_pop['clip_skip'] = config['clip_skip']
@@ -590,6 +593,7 @@ def populate_global_vars():
     r4 = s.get(global_var.url + "/sdapi/v1/embeddings")
     r5 = s.get(global_var.url + "/sdapi/v1/hypernetworks")
     r6 = s.get(global_var.url + "/sdapi/v1/upscalers")
+    r7 = s.get(global_var.url + "/sdapi/v1/schedulers")
     r = s.get(global_var.url + "/sdapi/v1/sd-models")
     for s1 in r1.json():
         try:
@@ -616,6 +620,8 @@ def populate_global_vars():
         global_var.hyper_names.append(s5['name'])
     for s6 in r6.json():
         global_var.upscaler_names.append(s6['name'])
+    for s7 in r7.json():
+        global_var.scheduler_names.append(s7['name'])
     if 'SwinIR_4x' in global_var.upscaler_names:
         template['upscaler_1'] = 'SwinIR_4x'
 

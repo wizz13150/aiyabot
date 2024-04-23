@@ -67,7 +67,7 @@ async def parse_image_info(ctx, image_url, command):
         activator_token = ''
 
         # initialize extra params
-        steps, size, guidance_scale, sampler, seed = '', '', '', '', ''
+        steps, size, guidance_scale, sampler, scheduler, seed = '', '', '', '', '', ''
         style, adetailer, highres_fix, clip_skip = '', None, '', ''
         strength, poseref, ipadapter, has_init_url = '', '', '', False
         if command == 'button' and ctx is not None:
@@ -105,6 +105,8 @@ async def parse_image_info(ctx, image_url, command):
                 guidance_scale = line.split(': ', 1)[1]
             if 'Sampler: ' in line:
                 sampler = line.split(': ', 1)[1]
+            if 'Scheduler: ' in line:
+                scheduler = line.split(': ', 1)[1]
             if 'Seed: ' in line:
                 seed = line.split(': ', 1)[1]
             if 'ADetailer: ' in line:
@@ -150,7 +152,7 @@ async def parse_image_info(ctx, image_url, command):
                                                  f'\nShorthash - ``{model_hash}``{activator_token}', inline=False)
 
         copy_command = f'/draw prompt:{prompt_field} steps:{steps} width:{width_height[0]} height:{width_height[1]}' \
-                       f' guidance_scale:{guidance_scale} sampler:{sampler} seed:{seed}'
+                       f' guidance_scale:{guidance_scale} sampler:{sampler} scheduler:{scheduler} seed:{seed}'
         if display_name != 'Unknown':
             copy_command += f' data_model:{display_name}'
 
@@ -162,7 +164,7 @@ async def parse_image_info(ctx, image_url, command):
             embed.add_field(name=f'Negative prompt', value=f'``{n_prompt_field}``', inline=False)
 
         extra_params = f'Sampling steps: ``{steps}``\nSize: ``{size}``\nClassifier-free guidance scale: ' \
-                       f'``{guidance_scale}``\nSampling method: ``{sampler}``\nSeed: ``{seed}``'
+                       f'``{guidance_scale}``\nSampling method: ``{sampler}``\nSchedule type: ``{scheduler}``\nSeed: ``{seed}``'
 
         if style:
             copy_command += f' styles:{style[0]}'

@@ -160,9 +160,16 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     @option(
         'sampler',
         str,
-        description='The sampler to use for generation.',
+        description='The sampling method to use for generation.',
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.sampler_autocomplete),
+    )
+    @option(
+        'scheduler',
+        str,
+        description='The scheduler type to use for generation.',
+        required=False,
+        autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.scheduler_autocomplete),
     )
     @option(
         'seed',
@@ -217,6 +224,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.hires_autocomplete),
     )
+    #@option(
+    #    'pag',
+    #    bool,
+    #    description='Activate Perturbed Attention Guidance for more dynamic results.',
+    #    required=False,
+    #)
     @option(
         'clip_skip',
         int,
@@ -257,12 +270,14 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             size_ratio: Optional[str] = None,
                             guidance_scale: Optional[str] = None,
                             sampler: Optional[str] = None,
+                            scheduler: Optional[str] = None,
                             seed: Optional[int] = -1,
                             styles: Optional[str] = None,
                             random_style: Optional[bool] = False,
                             extra_net: Optional[str] = None,
                             adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
+                            #pag: Optional[bool] = False,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,
                             init_image: Optional[discord.Attachment] = None,
@@ -327,6 +342,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             guidance_scale = settings.read(channel)['guidance_scale']
         if sampler is None:
             sampler = settings.read(channel)['sampler']
+        if scheduler is None:
+            scheduler = settings.read(channel)['scheduler']
         if styles is None:
             styles = settings.read(channel)['style']
         if highres_fix is None:
@@ -417,6 +434,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 guidance_scale = 7.0
         if sampler != settings.read(channel)['sampler']:
             reply_adds += f'\nSampler: ``{sampler}``'
+        if scheduler != settings.read(channel)['scheduler']:
+            reply_adds += f' - Scheduler: ``{scheduler}``'
         if init_image:
             # try to convert string to Web UI-friendly float
             try:
@@ -478,7 +497,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         # set up tuple of parameters to pass into the Discord view
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
-            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter)
+            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter, scheduler)
 
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
@@ -567,6 +586,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "height": queue_object.height,
                 "cfg_scale": queue_object.guidance_scale,
                 "sampler_index": queue_object.sampler,
+                "scheduler_index": queue_object.scheduler,
                 "seed": queue_object.seed,
                 "seed_resize_from_h": -1,
                 "seed_resize_from_w": -1,
@@ -588,14 +608,36 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     "denoising_strength": queue_object.strength
                 }
                 payload.update(img_payload)
+                
+            # Perturbed Attention Guidance payload
+            #print(f'queue_object.pag: {queue_object.pag}')
+            #if queue_object.pag is True:
+            #    pag_payload = {
+            #        "Incantations": {
+            #            "Perturbed Attention Guidance": {
+            #            "enable_pag": True,
+            #            "scale": 0.5,
+            #            "scale": 4,
+            #            "unet_block": "middle"
+            #            }
+            #        }
+            #    }
+                    #{
+                    
+                    #"enable_pag": True,
+                    #"adaptive_scale": 0.5, # PAG dampening factor, it penalizes PAG during late denoising stages, resulting in overall speedup: 0.0 means no penalty and 1.0 completely removes PAG.
+                    #"scale": 4, #PAG scale, has some resemblance to CFG scale - higher values can both increase structural coherence of the image and oversaturate/fry it entirely.
+                    #"unet_block": "middle"#, #Part of U-Net to which PAG is applied, original paper suggests to use middle.
+                    #"unet_block_id": "" #Id of U-Net layer in a selected block to which PAG is applied. PAG can be applied only to layers containing Self-attention blocks
+                #}
+                #payload['alwayson_scripts'] = payload.get('alwayson_scripts', {})
+                #payload['alwayson_scripts'].update(pag_payload)
 
-            # update payload if high-res fix is used
-            #original_width = queue_object.width
-            #original_height = queue_object.height
-
+            # if Details++ then use hires
             if queue_object.adetailer == 'Details++' and queue_object.highres_fix == 'Disabled':
                 queue_object.highres_fix = '4x_foolhardy_Remacri'
 
+            # hires payload
             if queue_object.highres_fix != 'Disabled':
                 upscale_ratio = 1.4
                 queue_object.width = int(queue_object.width * upscale_ratio)
@@ -656,10 +698,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 }
                 args = [True]
 
-                if queue_object.adetailer == "Faces+Hands":
+                if queue_object.adetailer == "Faces+Hands" or queue_object.adetailer == "Details++":
                     args.extend([model_mappings["Faces"], model_mappings["Hands"]])
-                elif queue_object.adetailer == "Details++":
-                    args.extend([model_mappings["Faces"], model_mappings["Hands"]])#, model_mappings["Details"]])
+                #elif queue_object.adetailer == "Details++":
+                #    args.extend([model_mappings["Faces"], model_mappings["Hands"]])#, model_mappings["Details"]])
                 else:
                     args.append(model_mappings[queue_object.adetailer])
 
@@ -771,6 +813,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         "steps": adjusted_steps,
                         "cfg_scale": queue_object.guidance_scale,
                         "sampler_index": queue_object.sampler,
+                        "scheduler_index": queue_object.scheduler,
                         "seed": queue_object.seed,
                         "denoising_strength": denoising_strength,
                         "script_name": "ultimate sd upscale",
