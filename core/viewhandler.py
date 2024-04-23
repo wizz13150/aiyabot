@@ -35,10 +35,11 @@ input_tuple[0] = ctx
 [19] = adetailer
 [20] = poseref
 [21] = ipadapter
+[22] = scheduler
 '''
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
                'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref', 'ipadapter']
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref', 'ipadapter', 'scheduler']
 
 
 # the modal that is used for the 🖋 button
@@ -46,13 +47,8 @@ class DrawModal(Modal):
     def __init__(self, input_tuple) -> None:
         super().__init__(title="Change Prompt!")
         self.input_tuple = input_tuple
-
-        # fix incremented seed in Edit when batch > 1
-        #current_batch = input_tuple[13][0] * input_tuple[13][1]
-        #if current_batch > 1:
-        #    original_seed = input_tuple[10] - current_batch
-        #else:
         original_seed = input_tuple[10]
+
 
         # run through mod function to get clean negative since I don't want to add it to stablecog tuple
         self.clean_negative = input_tuple[3]
@@ -202,6 +198,14 @@ class DrawModal(Modal):
                     invalid_input = True
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is unrecognized. I know of these samplers!",
                                         value=', '.join(['`%s`' % x for x in settings.global_var.sampler_names]),
+                                        inline=False)
+            if 'scheduler:' in line:
+                if line.split(':', 1)[1] in settings.global_var.scheduler_names:
+                    pen[22] = line.split(':', 1)[1]
+                else:
+                    invalid_input = True
+                    embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is unrecognized. I know of these schedulers!",
+                                        value=', '.join(['`%s`' % x for x in settings.global_var.scheduler_names]),
                                         inline=False)
             if 'strength:' in line:
                 try:

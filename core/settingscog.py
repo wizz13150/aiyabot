@@ -26,6 +26,10 @@ class SettingsCog(commands.Cog):
         return [
             sampler for sampler in settings.global_var.sampler_names
         ]
+    def scheduler_autocomplete(self: discord.AutocompleteContext):
+        return [
+            scheduler for scheduler in settings.global_var.scheduler_names
+        ]
     def style_autocomplete(self: discord.AutocompleteContext):
         return [
             style for style in settings.global_var.style_names
@@ -137,6 +141,13 @@ class SettingsCog(commands.Cog):
         autocomplete=discord.utils.basic_autocomplete(sampler_autocomplete),
     )
     @option(
+        'scheduler',
+        str,
+        description='Set default scheduler for the channel',
+        required=False,
+        autocomplete=discord.utils.basic_autocomplete(scheduler_autocomplete),
+    )
+    @option(
         'styles',
         str,
         description='Apply a predefined style to the generation.',
@@ -211,6 +222,7 @@ class SettingsCog(commands.Cog):
                                width: Optional[int] = None, height: Optional[int] = None,
                                guidance_scale: Optional[str] = None,
                                sampler: Optional[str] = None,
+                               scheduler: Optional[str] = None,
                                styles: Optional[str] = None,
                                hypernet: Optional[str] = None,
                                lora: Optional[str] = None,
@@ -256,7 +268,7 @@ class SettingsCog(commands.Cog):
                 cur_n_prompt = f'{cur_n_prompt[:1010]}....'
             embed.add_field(name=f'Current negative prompt', value=f'``{cur_n_prompt}``', inline=True)
 
-        if prompt_prefix is not None:
+        if prompt_prefix:
             settings.update(channel, 'prompt_prefix', prompt_prefix)
             new += f'\nPrompt Prefix: ``"{prompt_prefix}"``'
             set_new = True
@@ -265,6 +277,7 @@ class SettingsCog(commands.Cog):
         if refresh:
             settings.global_var.model_info.clear()
             settings.global_var.sampler_names.clear()
+            settings.global_var.scheduler_names.clear()
             settings.global_var.style_names.clear()
             settings.global_var.embeddings_1.clear()
             settings.global_var.embeddings_2.clear()
@@ -321,6 +334,11 @@ class SettingsCog(commands.Cog):
         if sampler is not None:
             settings.update(channel, 'sampler', sampler)
             new += f'\nSampler: ``"{sampler}"``'
+            set_new = True
+
+        if scheduler is not None:
+            settings.update(channel, 'scheduler', scheduler)
+            new += f'\nScheduler: ``"{scheduler}"``'
             set_new = True
 
         if styles is not None:

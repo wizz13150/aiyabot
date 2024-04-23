@@ -18,7 +18,7 @@ from core import settings
 class DrawObject:
     def __init__(self, cog, ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height,
                  guidance_scale, sampler, seed, strength, init_image, batch, styles, highres_fix,
-                 clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter, view):
+                 clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter, scheduler, view):
         self.cog = cog
         self.ctx = ctx
         self.simple_prompt = simple_prompt
@@ -30,6 +30,7 @@ class DrawObject:
         self.height = height
         self.guidance_scale = guidance_scale
         self.sampler = sampler
+        self.scheduler = scheduler
         self.seed = seed
         self.strength = strength
         self.init_image = init_image
@@ -39,6 +40,7 @@ class DrawObject:
         self.poseref = poseref
         self.ipadapter = ipadapter
         self.highres_fix = highres_fix
+        #self.pag = pag
         self.clip_skip = clip_skip
         self.extra_net = extra_net
         self.epoch_time = epoch_time
