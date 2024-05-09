@@ -112,6 +112,8 @@ class PromptButton(Button):
         try:
             await interaction.response.defer()
             await self.parent_view.handle_draw_prompt(interaction, self.parent_view.prompts[self.prompt_index], self.prompt_index)
+        except discord.errors.InteractionResponded:
+            print("Interaction already responded to.")
         except Exception as e:
             print(f'The draw button broke: {str(e)}')
             self.disabled = True
@@ -310,6 +312,13 @@ class GenerateView(View):
                 tags.append(tag)
             return " ".join(tags)
 
+    def update_select_menus(self):
+        for item in self.children:
+            if isinstance(item, LorasSelect):
+                item.update_selected_options(self.loras_selections)
+            elif isinstance(item, StylesSelect):
+                item.update_selected_options(self.styles_selections)
+
     async def handle_draw_prompt(self, interaction, prompt, prompt_index):
         size_ratio = self.selected_format
         adetailer_choice = self.adetailer
@@ -330,20 +339,13 @@ class GenerateView(View):
         self.update_select_menus()
         await interaction.edit_original_response(view=self)
 
-    def update_select_menus(self):
-        for item in self.children:
-            if isinstance(item, LorasSelect):
-                item.update_selected_options(self.loras_selections)
-            elif isinstance(item, StylesSelect):
-                item.update_selected_options(self.styles_selections)
-
 
 class GenerateCog(commands.Cog):
     model_paths = {
             "WizzGPTV2": "core/WizzGPT2-v2",
             "InsomniaV2": "core/Insomnia-v2",
-            "Insomnia": "core/Insomnia",
-            "WizzGPT": "core/WizzGPT2"#,
+            #"Insomnia": "core/Insomnia",
+            #"WizzGPT": "core/WizzGPT2"#,
             #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
             #"MagicPrompt-SD": "core/MagicPrompt-SD/",
             #"Microsoft-Promptist": "core/Microsoft-Promptist"#,
@@ -365,6 +367,9 @@ class GenerateCog(commands.Cog):
             self.models[model_name] = model
             self.tokenizers[model_name] = tokenizer
         self.current_model = "WizzGPTV2"
+
+    def get_model_and_tokenizer(self, model_name):
+        return self.models.get(model_name), self.tokenizers.get(model_name)
 
     @commands.slash_command(name='generate', description='Generates a prompt from text', guild_only=True)
     @option(

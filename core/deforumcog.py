@@ -52,6 +52,7 @@ class DeforumCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.config = self.load_or_create_config('deforum.json')
+        self.preset_folder = 'deforum-presets'
 
     def load_or_create_config(self, filename):
         """Load the existing configuration or create a new one if it doesn't exist."""
@@ -218,18 +219,27 @@ class DeforumCog(commands.Cog):
             val = f'0:({val})'
         return val
 
+    def preset_choices(ctx: discord.AutocompleteContext):
+        preset_folder = 'deforum-presets'
+        return [file.split('.')[0] for file in os.listdir(preset_folder) if file.endswith('.txt')][:25]
+
+    def load_preset(self, preset_name):
+        with open(f'{self.preset_folder}/{preset_name}.txt', 'r') as file:
+            return json.load(file)
+
     @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
     @option('prompts', str, description='The prompts to generate the animation.', required=True,)
+    @option('preset', str, description='Select a preset to generate the animation.', required=False, autocomplete=preset_choices)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
     @option('steps', int, description='The steps for the animation. (default=31)', required=False, default=31)
     @option('seed', int, description='The seed for the animation. (default= -1 = random, iter every frame)', required=False, default=-1)
     @option('size_ratio', str, description='The size ratio for the animation.', required=False, default=None, choices=[
+        "Landscape: 3:2 - 1216x832",
+        "Portrait: 2:3 - 832x1216",
         "Fullscreen: 4:3 - 1152x896",
         "Widescreen: 16:9 - 1344x768",
         "Ultrawide: 21:9 - 1536x640",
-        "Landscape: 3:2 - 1280x768",
         "Square: 1:1 - 1024x1024",
-        "Portrait: 2:3 - 768x1280",
         "Tall: 9:16 - 768x1344"
     ])
     @option('translation_x', str, description='The X translation to move the canvas left/right in pixels per frame. (default="0:(0)"))', required=False, default="0:(0)")
@@ -238,9 +248,9 @@ class DeforumCog(commands.Cog):
     @option('rotation_3d_x', str, description='The 3D X rotation to tilt the canvas up/down in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_y', str, description='The 3D Y rotation to pan the canvas left/right in degrees per frame. (default="0:(0)"))', required=False, default="0:(0)")
     @option('rotation_3d_z', str, description='The 3D Z rotation to roll the canvas clockwise/ anticlockwise. (default="0:(0)"))', required=False, default="0:(0)")
-    @option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
-    @option('height', int, description='The height for the animation. (default=1280))', required=False, default=1280)
-    @option('fps', int, description='The FPS for the animation. (default=15))', required=False, default=15)
+    #@option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
+    #@option('height', int, description='The height for the animation. (default=1280))', required=False, default=1280)
+    @option('fps', int, description='The FPS for the animation. (default=112))', required=False, default=12)
     @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(140)"))', required=False, default="0:(140)")
     @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0)"))', required=False, default="0:(0)")
@@ -258,19 +268,20 @@ class DeforumCog(commands.Cog):
         self,
         ctx,
         prompts: str,
+        preset: Optional[str] = None,
         cadence: Optional[int] = 6,
         steps: Optional[int] = 31,
         seed: Optional[int] = -1,
-        size_ratio: Optional[str] = None,
+        size_ratio: Optional[str] = "Portrait: 2:3 - 768x1280",
         translation_x: Optional[str] = "0:(0)",
         translation_y: Optional[str] = "0:(0)",
         translation_z: Optional[str] = "0:(0.5)",
         rotation_3d_x: Optional[str] = "0:(0)",
         rotation_3d_y: Optional[str] = "0:(0)",
         rotation_3d_z: Optional[str] = "0:(0)",
-        width: Optional[int] = 768,
-        height: Optional[int] = 1280,
-        fps: Optional[int] = 15,
+        #width: Optional[int] = 768,
+        #height: Optional[int] = 1280,
+        fps: Optional[int] = 12,
         max_frames: Optional[int] = 120,
         fov_schedule: Optional[str] = "0:(140)",
         noise_schedule: Optional[str] = "0:(0)",
@@ -287,18 +298,22 @@ class DeforumCog(commands.Cog):
 
         # size ratioss
         ratios = {
+            "Portrait: 2:3 - 832x1212": (832, 1216),
+            "Landscape: 3:2 - 1216x832": (1216, 832),
             "Fullscreen: 4:3 - 1152x896": (1152, 896),
             "Widescreen: 16:9 - 1344x768": (1344, 768),
             "Ultrawide: 21:9 - 1536x640": (1536, 640),
-            "Landscape: 3:2 - 1280x768": (1280, 768),
             "Square: 1:1 - 1024x1024": (1024, 1024),
-            "Portrait: 2:3 - 768x1280": (768, 1280),
             "Tall: 9:16 - 768x1344": (768, 1344)
         }
 
         # ratio override width and height if size_ratio is provided
         if size_ratio and size_ratio in ratios:
             width, height = ratios[size_ratio]
+
+        # randomize the seed if still -1, 10 digits
+        if seed == -1:
+            seed = random.randint(1000000000, 9999999999)
 
         print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
@@ -314,9 +329,9 @@ class DeforumCog(commands.Cog):
             "rotation_3d_x": "0:(0)",
             "rotation_3d_y": "0:(0)",
             "rotation_3d_z": "0:(0)",
-            "width": 768,
-            "height": 1280,
-            "fps": 15,
+            "width": 832,
+            "height": 1216,
+            "fps": 12,
             "max_frames": 120,
             "fov_schedule": "0:(140)",
             "noise_schedule": "0:(0)",
@@ -378,18 +393,30 @@ class DeforumCog(commands.Cog):
 
         # construct deforum_settings
         # add wrapped values to deforum_settings
-        deforum_settings['translation_x'] = self.wrap_value(translation_x)        
-        deforum_settings['translation_y'] = self.wrap_value(translation_y)
-        deforum_settings['translation_z'] = self.wrap_value(translation_z)
-        deforum_settings['rotation_3d_x'] = self.wrap_value(rotation_3d_x)
-        deforum_settings['rotation_3d_y'] = self.wrap_value(rotation_3d_y)
-        deforum_settings['rotation_3d_z'] = self.wrap_value(rotation_3d_z)
-        deforum_settings['fov_schedule'] = self.wrap_value(fov_schedule)
-        deforum_settings['noise_schedule'] = self.wrap_value(noise_schedule)
-        deforum_settings['noise_multiplier_schedule'] = self.wrap_value(noise_multiplier_schedule)
-        deforum_settings['strength_schedule'] = self.wrap_value(strength_schedule)
-        deforum_settings['cfg_scale_schedule'] = self.wrap_value(cfg_scale_schedule)
-        deforum_settings['amount_schedule'] = self.wrap_value(antiblur_amount_schedule)
+        deforum_settings.update({
+            'translation_x': self.wrap_value(translation_x),
+            'translation_y': self.wrap_value(translation_y),
+            'translation_z': self.wrap_value(translation_z),
+            'rotation_3d_x': self.wrap_value(rotation_3d_x),
+            'rotation_3d_y': self.wrap_value(rotation_3d_y),
+            'rotation_3d_z': self.wrap_value(rotation_3d_z),
+            'fov_schedule': self.wrap_value(fov_schedule),
+            'noise_schedule': self.wrap_value(noise_schedule),
+            'noise_multiplier_schedule': self.wrap_value(noise_multiplier_schedule),
+            'strength_schedule': self.wrap_value(strength_schedule),
+            'cfg_scale_schedule': self.wrap_value(cfg_scale_schedule),
+            'amount_schedule': self.wrap_value(antiblur_amount_schedule),
+            'diffusion_cadence': cadence,
+            'steps': steps,
+            'W': width,
+            'H': height,
+            'fps': fps,
+            'max_frames': max_frames,
+            'frame_interpolation_engine': frame_interpolation_engine,
+            'parseq_manifest': parseq_manifest,
+            'make_gif': make_gif,
+            "extract_to_frame": max_frames,
+        })
 
         # add fixed params to deforum_settings
         deforum_settings['sampler'] = "Euler a"
@@ -398,30 +425,33 @@ class DeforumCog(commands.Cog):
         deforum_settings['depth_algorithm'] = "Leres"
         deforum_settings['border'] = "wrap"
         deforum_settings['padding_mode'] = "reflection"
-
-        # add useful options to deforum_settings
-        deforum_settings['diffusion_cadence'] = cadence
-        deforum_settings['steps'] = steps
-        deforum_settings['W'] = width
-        deforum_settings['H'] = height
-        deforum_settings['fps'] = fps
-
-        # randomize the seed if still -1, 10 digits
-        if seed == -1:
-            seed = random.randint(1000000000, 9999999999)
         deforum_settings['seed'] = seed
-        deforum_settings['max_frames'] = max_frames
-        deforum_settings['frame_interpolation_engine'] = frame_interpolation_engine
-        deforum_settings['parseq_manifest'] = parseq_manifest
-        deforum_settings['make_gif'] = make_gif
 
         # enable and add init_image url to deforum_settings
         if init_image:
             deforum_settings['use_init'] = True
             deforum_settings['strength'] = 0.9
+            print(f'init_image: {init_image}')
         deforum_settings['init_image'] = init_image
-        print(f'init_image: {init_image}')
 
+        # apply presets
+        if preset:
+            preset_settings = self.load_preset(preset)
+            deforum_settings.update(preset_settings)
+
+        deforum_settings.update({
+            #'diffusion_cadence': cadence,
+            'steps': steps,
+            'W': width,
+            'H': height,
+            'fps': fps,
+            'max_frames': max_frames,
+            'frame_interpolation_engine': frame_interpolation_engine,
+            'make_gif': make_gif,
+            "extract_to_frame": max_frames,
+        })
+
+        # update the prompts
         try:
             prompts = self.parse_prompts(prompts)
         except Exception as e:
