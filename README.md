@@ -10,8 +10,8 @@ A Discord bot interface for Stable Diffusion
 
 # - To generate an image from text, use the /Draw command and include your prompt as the query.
 
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/11c6fe5f-ec91-4fac-864f-06f262fced6b)
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/c9671f52-f783-4969-84d1-0d370b4259fe)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/a8fa1151-0047-4366-b01a-615cdd801b1c)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/97068bcc-431a-43bd-b2be-912119ffd96d)
 
 
 # - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
@@ -30,6 +30,11 @@ Result:
 
 https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b1778f7119
 
+
+# - To chat with the llama3 model, tag or reply to the bot to chat. 
+Start with !generate to let the chatbot to prompt and generate. (Draft feature, more or less functionnal)
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/8a07cf52-bbfd-464c-8911-b5f3a6e8b6e0)
 
 
 ### Currently supported options for /Draw
@@ -68,6 +73,7 @@ https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b
 - /info command - basic usage guide, other info, and download batch images.
 - /upscale command - resize your image.
 - live preview during generation.
+- chatbot using gpt4all to run llama3-8B (using gpt4all to run a gguf version on a 8gb AMD card)
 - buttons - certain outputs will contain buttons.
   - 🖋 - edit prompt, then generate a new image with same parameters.
   - 🎲 - randomize seed, then generate a new image with same parameters.
