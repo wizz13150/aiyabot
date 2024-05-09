@@ -1,5 +1,5 @@
 # Customized version of the bot. 
-Also require to install 3 extensions: ControlNet, Deforum and ADetailer.
+Also require to install 3 extensions: ControlNet (Openpose and IPAdapter), Deforum and ADetailer.
 # AIYA
 
 A Discord bot interface for Stable Diffusion
@@ -10,14 +10,13 @@ A Discord bot interface for Stable Diffusion
 
 # - To generate an image from text, use the /Draw command and include your prompt as the query.
 
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/268950b2-dbba-48f2-8fa4-41da8604d4d4)
-
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/65249939-5ad1-4f16-aa91-6934b356996e)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/11c6fe5f-ec91-4fac-864f-06f262fced6b)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/c9671f52-f783-4969-84d1-0d370b4259fe)
 
 
 # - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
 
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/74efc7ae-c9a9-4971-a90e-390985f5cc80)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/e59d32e6-fe4f-4d43-9d53-9127d96cb393)
 
 
 
@@ -52,6 +51,8 @@ https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b
 - batch count
 - Poseref (ControlNet, openpose)
 - ADetailer (Faces, Hands, or Both)
+- IPAdapter (ControlNet, ipadapter)
+
 
 #### Bonus features
 
@@ -66,6 +67,7 @@ https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b
 - /stats command - shows how many /draw commands have been used.
 - /info command - basic usage guide, other info, and download batch images.
 - /upscale command - resize your image.
+- live preview during generation.
 - buttons - certain outputs will contain buttons.
   - 🖋 - edit prompt, then generate a new image with same parameters.
   - 🎲 - randomize seed, then generate a new image with same parameters.
