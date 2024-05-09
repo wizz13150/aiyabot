@@ -105,8 +105,8 @@ async def parse_image_info(ctx, image_url, command):
                 guidance_scale = line.split(': ', 1)[1]
             if 'Sampler: ' in line:
                 sampler = line.split(': ', 1)[1]
-            if 'Schedule type: ' in line:
-                scheduler = line.split(': ', 1)[1].lower()
+            if 'Scheduler: ' in line:
+                scheduler = line.split(': ', 1)[1]
             if 'Seed: ' in line:
                 seed = line.split(': ', 1)[1]
             if 'ADetailer: ' in line:
@@ -164,7 +164,7 @@ async def parse_image_info(ctx, image_url, command):
             embed.add_field(name=f'Negative prompt', value=f'``{n_prompt_field}``', inline=False)
 
         extra_params = f'Sampling steps: ``{steps}``\nSize: ``{size}``\nClassifier-free guidance scale: ' \
-                       f'``{guidance_scale}``\nSampler: ``{sampler}``\nScheduler: ``{scheduler}``\nSeed: ``{seed}``'
+                       f'``{guidance_scale}``\nSampling method: ``{sampler}``\nSchedule type: ``{scheduler}``\nSeed: ``{seed}``'
 
         if style:
             copy_command += f' styles:{style[0]}'

@@ -4,4 +4,3 @@ requests
 Pillow
 tomlkit
 urlextract
-gpt4all

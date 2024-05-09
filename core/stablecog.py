@@ -391,9 +391,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         prompt = settings.extra_net_defaults(prompt, channel)
 
         if data_model != '':
-            print(f'/Draw request -- {ctx.author.name} -- Prompt: {prompt}')
+            print(f'/Draw request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt}')
         else:
-            print(f'/Draw request -- {ctx.author.name} -- Prompt: {prompt} -- Using model: {data_model}')
+            print(f'/Draw request -- {ctx.author.name}#{ctx.author.discriminator} -- Prompt: {prompt} -- Using model: {data_model}')
 
         if seed == -1:
             seed = random.randint(0, 0xFFFFFFFF)

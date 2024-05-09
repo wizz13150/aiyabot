@@ -31,7 +31,7 @@ class LeaderboardCog(commands.Cog):
     def check_and_create_csv():
         if not os.path.exists("leaderboard.csv"):
             with open("leaderboard.csv", "w", newline='') as csvfile:
-                fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count", "Chat_Count"]
+                fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count"]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
 
@@ -66,12 +66,12 @@ class LeaderboardCog(commands.Cog):
                 break
 
         if not user_exists:
-            new_entry = {"User_ID": str(user_id), "Username": username, "Image_Count": "0", "Identify_Count": "0", "Deforum_Count": "0", "Generate_Count": "0", "Chat_Count": "0"}
+            new_entry = {"User_ID": str(user_id), "Username": username, "Image_Count": "0", "Identify_Count": "0", "Deforum_Count": "0", "Generate_Count": "0"}
             new_entry[action] = "1"
             leaderboard_data.append(new_entry)
 
         with open("leaderboard.csv", "w", newline='') as csvfile:
-            fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count", "Chat_Count"]
+            fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for entry in leaderboard_data:
@@ -99,7 +99,7 @@ class LeaderboardCog(commands.Cog):
             # Create the leaderboard embed
             embed = discord.Embed(title="🏆 Leaderboard 🏆", description="Top 10 Users by Images", color=0x00ff00)
             for idx, entry in enumerate(leaderboard_data[:10]):  # Show top 10
-                value=f"{entry['Image_Count']} {self.pluralize(int(entry['Image_Count']), 'image')}, {entry['Identify_Count']} {self.pluralize(int(entry['Identify_Count']), 'identify', 'identifies')}, {entry['Deforum_Count']} {self.pluralize(int(entry['Deforum_Count']), 'animation')}, {entry['Generate_Count']} {self.pluralize(int(entry['Generate_Count']), 'prompt')}, {entry['Chat_Count']} {self.pluralize(int(entry['Chat_Count']), 'chat')}"
+                value=f"{entry['Image_Count']} {self.pluralize(int(entry['Image_Count']), 'image')}, {entry['Identify_Count']} {self.pluralize(int(entry['Identify_Count']), 'identify', 'identifies')}, {entry['Deforum_Count']} {self.pluralize(int(entry['Deforum_Count']), 'animation')}, {entry['Generate_Count']} {self.pluralize(int(entry['Generate_Count']), 'prompt')}"
                 embed.add_field(name=f"{idx+1}. {entry['Username']}", value=value, inline=False)
 
             await ctx.send_response(content=f'<@{ctx.author.id}>', embed=embed, view=LeaderboardView())
