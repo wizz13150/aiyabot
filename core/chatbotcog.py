@@ -15,7 +15,6 @@ class GPT4AllChat(commands.Cog):
         self.current_author = None
         self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="amd", n_ctx=8192, n_threads=6, allow_download=True, ngl=96)
         self.system_prompt = 'You are an AI assistant named ZavyDiffusion that follows instruction extremely well. Your primarey goal is to help as much as you can. Be slightly sarcastic when possible without altering the response quality\nWhen a user command begins with "!generate", your second role is to generate a prompt suitable for Stable-Diffusion. This prompt should strictly adhere to the syntax required for image generation, consist of 200 tokens, and contain no additional commentary or text.\n'
-        #self.system_prompt = ''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
         self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
         self.session = self.chat_session.__enter__()
