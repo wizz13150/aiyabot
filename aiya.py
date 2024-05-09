@@ -29,7 +29,6 @@ self.load_extension('core.infocog')
 #self.load_extension('core.metacog')
 self.load_extension('core.leaderboardcog')
 self.load_extension('core.deforumcog')
-self.load_extension('core.chatbotcog')
 
 use_generate = os.getenv("USE_GENERATE", 'True')
 enable_generate = use_generate.lower() in ('true', '1', 't')
@@ -38,6 +37,8 @@ if enable_generate:
     self.load_extension('core.generatecog')
 else:
     print(f"/generate command is DISABLED due to USE_GENERATE={use_generate}")
+
+self.load_extension('core.chatbotcog')
 
 # stats slash command
 @self.slash_command(name='stats', description='How many images have I generated?')

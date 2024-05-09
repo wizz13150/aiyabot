@@ -390,8 +390,17 @@ class GlobalQueue:
 
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
-    GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
-    GlobalQueue.dream_thread.start()
+    try:
+        print(f"Type of self: {type(self)}")  # Must be the method with dream
+
+        if not hasattr(self, 'dream'):
+            print("Error: 'self' does not have the method 'dream'.")
+            return
+        
+        GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
+        GlobalQueue.dream_thread.start()
+    except Exception as e:
+        print(f"Failed to start dream thread: {str(e)}")
 
 async def process_generate(generate_cog, queue_object: GenerateObject):
     GlobalQueue.generate_thread = Thread(target=generate_cog.dream, args=(
