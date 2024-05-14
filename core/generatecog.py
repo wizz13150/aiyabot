@@ -343,17 +343,8 @@ class GenerateView(View):
 class GenerateCog(commands.Cog):
     model_paths = {
             "WizzGPTV2": "core/WizzGPT2-v2",
-            "InsomniaV2": "core/Insomnia-v2",
-            #"Insomnia": "core/Insomnia",
-            #"WizzGPT": "core/WizzGPT2"#,
-            #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2",
-            #"MagicPrompt-SD": "core/MagicPrompt-SD/",
-            #"Microsoft-Promptist": "core/Microsoft-Promptist"#,
-            #"Daspartho-Prompt-extend": "core/Daspartho-Prompt-extend", 
-            #"LexicArt": "core/LexicArt", 
-            #"MajinAI": "core/MajinAI", 
-            #"Kmewhort-SD-prompt-bolster": "core/Kmewhort-SD-prompt-bolster",
-            #"Succinctly-Pompt-generator": "core/Succinctly-Pompt-generator"
+            #"InsomniaV2": "core/Insomnia-v2",
+            #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2"
         }
     model_choices = list(model_paths.keys())
 
