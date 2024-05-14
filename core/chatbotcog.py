@@ -81,12 +81,12 @@ class GPT4AllChat(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         # Stop generation if the "!stop" command is detected
-        if message.content == "!stop" and message.author.id == self.current_author:
+        if message.content.lower() == "!stop" and message.author.id == self.current_author:
             self.stop_requested = True
             return
 
         # Reset chat_session if the "!reset" command is detected
-        #if message.content == "!reset" and message.author.id == self.current_author:
+        #if message.content.lower() == "!reset" and message.author.id == self.current_author:
         #    await self.reset_session()
         #    await message.channel.send("Chat session has been reset.")
         #    return
@@ -105,7 +105,7 @@ class GPT4AllChat(commands.Cog):
             return
 
         # Detect if the message asks for an image
-        if content.startswith("!generate"):
+        if content.lower().startswith("!generate"):
             await self.handle_generate_command(message, content)
             return
 

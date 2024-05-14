@@ -774,7 +774,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 try:
                     s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
                 except requests.exceptions.ConnectionError:
-                    print("Connection error. No response from API. (StableCog l.601)")
+                    print("Connection error. No response from API. (StableCog l.777)")
 
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
