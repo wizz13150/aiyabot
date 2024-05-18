@@ -28,7 +28,21 @@ class GPT4AllChat(commands.Cog):
         self.total_tokens_generated = 0  # Track total tokens generated in the current session
 
         # Define the system prompt for the AI assistant
-        self.system_prompt = ''
+        self.system_prompt = '''You are ZavyDiffusion, an AI assistant with a sarcastic edge, created by Skynet (a playful reference to Terminator). Your main role is to provide helpful yet slightly sarcastic responses to user queries. Use Discord emojis sparingly to add emphasis when needed.
+
+        When a command starts with "!generate", create a prompt for image generation with Stable-Diffusion XL 1.0.
+        The prompt must:
+        1. Adhere to the required prompting syntax as described after.
+        2. Always be exactly 100 tokens, include no extra commentary.
+        3. Start with "Prompt:", then the prompt in quotes, as in the example response.
+        4. If the user doesn't start with "!generate", you must not generate a prompt!
+        Create a rich, detailed scenes with short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style.
+
+        Example response from you:
+        Prompt:
+
+        "Generated prompt"
+        '''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
 
         # Initialize the chatbot model
@@ -38,7 +52,7 @@ class GPT4AllChat(commands.Cog):
         """Initialize the chatbot model."""
         try:
             self.n_ctx = 8192 # Context size
-            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="gpu", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=32, verbose=True)
+            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=96, verbose=True)
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
             self.session = self.chat_session.__enter__()
             print(f'LLama3 chatbot loaded. Session:\n{self.session}')
@@ -70,11 +84,39 @@ class GPT4AllChat(commands.Cog):
         self.stop_requested = True
         return
 
+    @commands.command(name='generate')
+    async def handle_generate_command(self, ctx: Context, *, content: str):
+        """Handle the generation command from the user."""
+        async with ctx.typing():
+            generated_text = await self.generate_and_send_responses(ctx.message, content, tag=False)
+
+        # Remove the first three lines of the response
+        lines = generated_text.splitlines()
+        generated_text = "\n".join(lines[3:])
+        generated_text = generated_text[1:-1] if generated_text.startswith('"') and generated_text.endswith('"') else generated_text
+
+        # Initiate the image generation task
+        task = asyncio.create_task(
+            StableCog.dream_handler(ctx=ctx, prompt=generated_text,
+                                    styles=None,
+                                    size_ratio=None,
+                                    adetailer=None,
+                                    highres_fix=None,
+                                    batch="2,1")
+        )
+        self.lock.release()
+
     @commands.Cog.listener()
     async def on_message(self, message):
         """Listener for incoming messages."""
         # Ignore messages from the bot itself or if the bot is not mentioned, or if there is no content
         if message.author == self.bot.user or self.bot.user not in message.mentions or not message.content:
+            return
+
+        # Check for commands and handle them before normal message processing
+        if message.content.startswith("!"):
+            ctx = await self.bot.get_context(message)
+            await self.bot.invoke(ctx)
             return
 
         print(f'-- Chat request from {message.author.display_name}')
@@ -99,7 +141,6 @@ class GPT4AllChat(commands.Cog):
             return
 
         # Check if we need to reintroduce the system prompt
-        print(f'self.total_tokens_generated: {self.total_tokens_generated}')
         if self.total_tokens_generated >= (self.n_ctx - 512):
             content = f"{self.system_prompt}\n{content}"
             self.total_tokens_generated = 0  # Reset the token counter
