@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+import warnings
 from discord.ext import commands
 from gpt4all import GPT4All
 from discord.ext.commands import Context
@@ -8,93 +9,72 @@ from discord.ext.commands import Context
 from core.leaderboardcog import LeaderboardCog
 from core.stablecog import StableCog
 
-# Configure logging
+# Ignore specific warnings
+warnings.filterwarnings("ignore", category=UserWarning, message="Shard ID None heartbeat blocked")
+
+# Configure logging to capture information and errors
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GPT4AllChat(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
         self.lock = asyncio.Lock()  # Lock to manage concurrent access to bot resources
+        self.bot = bot
         self.stop_requested = False
         self.current_author = None
         self.model = None
         self.chat_session = None
         self.session = None
-        self.system_prompt = 'You are an AI assistant named ZavyDiffusion that follows instruction extremely well. Your primary goal is to help as much as you can. Be slightly sarcastic when possible without altering the response quality.\nWhen a user command begins with "!generate", your second role is to generate a prompt suitable for Stable-Diffusion. This prompt should strictly adhere to the syntax required for image generation, consist of 200 tokens, and contain no additional commentary or text.\n'
+        self.total_tokens_generated = 0  # Track total tokens generated in the current session
+
+        # Define the system prompt for the AI assistant
+        self.system_prompt = ''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
+
+        # Initialize the chatbot model
         self.initialize_model()
 
     def initialize_model(self):
+        """Initialize the chatbot model."""
         try:
-            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="amd", n_ctx=8192, n_threads=6, allow_download=True, ngl=96)
+            self.n_ctx = 8192 # Context size
+            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="gpu", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=32, verbose=True)
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
             self.session = self.chat_session.__enter__()
             print(f'LLama3 chatbot loaded. Session:\n{self.session}')
+            return
         except Exception as e:
             logger.error(f"Error initializing the model: {str(e)}")
 
-    async def reset_session(self):
-        print(f'Resetting session context...')
-        if self.model:
-            try:
-                print(f'Close current model instance...')
-                self.model.close()
-            except Exception as e:
-                logger.error(f"Error closing the model: {str(e)}")
+    @commands.command(name='reset')
+    async def reset_session(self, ctx: Context):
+        """Reset the chat session."""
+        # Reset the chat session regardless of the generation state
+        self.stop_requested = True
+        self.total_tokens_generated = 0  # Reset the token counter
+        try:
+            self.chat_session.__exit__(None, None, None)  # Close the existing session
+            self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
+            self.session = self.chat_session.__enter__()
+            await ctx.send("Chat session has been reset!")
+        except Exception as e:
+            logger.error(f"Error closing the session or model: {str(e)}")
+            await ctx.send(f"An error occurred: {str(e)}")
+        finally:
+            self.stop_requested = False
+            return
 
-        self.initialize_model()
-
-    async def get_context_from_message(self, message):
-        ctx = Context(bot=self.bot, message=message, prefix='!', view=None)
-        ctx.called_from_button = True
-        return ctx
-
-    async def handle_generate_command(self, message, content):
-        # Generate the prompt/response
-        async with message.channel.typing():
-            generated_text = await self.generate_and_send_responses(message, content, tag=False)
-
-        # Delete 3 first lines of the response
-        lines = generated_text.splitlines()
-        generated_text = "\n".join(lines[3:])
-        generated_text = generated_text[1:-1] if generated_text.startswith('"') and generated_text.endswith('"') else generated_text
-
-        self.author = message.author
-        self.channel = message.channel
-        self.called_from_button = True
-
-        # Create a context object
-        ctx = await self.get_context_from_message(message)
-
-        # Generate the pic from the response
-        task = asyncio.create_task(
-            StableCog.dream_handler(ctx=ctx, prompt=generated_text,
-                                    styles=None,
-                                    size_ratio=None,
-                                    adetailer=None,
-                                    highres_fix=None,
-                                    batch="2,1")
-        )
-        self.lock.release()
+    @commands.command(name='stop')
+    async def stop_generation(self, ctx: Context):
+        """Stop the current generation."""
+        self.stop_requested = True
+        return
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        # Stop generation if the "!stop" command is detected
-        if message.content.lower() == "!stop" and message.author.id == self.current_author:
-            self.stop_requested = True
-            return
-
-        # Reset chat_session if the "!reset" command is detected
-        #if message.content.lower() == "!reset" and message.author.id == self.current_author:
-        #    await self.reset_session()
-        #    await message.channel.send("Chat session has been reset.")
-        #    return
-
-        # Clean the message content to remove unnecessary mentions
-        content = message.clean_content.replace(f'@{self.bot.user.display_name}', '').strip()
+        """Listener for incoming messages."""
         # Ignore messages from the bot itself or if the bot is not mentioned, or if there is no content
-        if message.author == self.bot.user or self.bot.user not in message.mentions or not content:
+        if message.author == self.bot.user or self.bot.user not in message.mentions or not message.content:
             return
 
         print(f'-- Chat request from {message.author.display_name}')
@@ -104,42 +84,47 @@ class GPT4AllChat(commands.Cog):
             await message.channel.send("Busy, try later.")
             return
 
-        # Detect if the message asks for an image
-        if content.lower().startswith("!generate"):
-            await self.handle_generate_command(message, content)
-            return
-
         try:
             self.current_author = message.author.id
             async with message.channel.typing():
-                await self.generate_and_send_responses(message, content, tag=True)
+                await self.generate_and_send_responses(message, message.clean_content, tag=True)
         finally:
             self.current_author = None
             self.stop_requested = False
             self.lock.release()
 
     async def generate_and_send_responses(self, message, content, tag):
+        """Generate and send responses to the user message."""
         if self.stop_requested:
             return
+
+        # Check if we need to reintroduce the system prompt
+        print(f'self.total_tokens_generated: {self.total_tokens_generated}')
+        if self.total_tokens_generated >= (self.n_ctx - 512):
+            content = f"{self.system_prompt}\n{content}"
+            self.total_tokens_generated = 0  # Reset the token counter
 
         response = f"<@{message.author.id}>\n"
         initial_response_sent = False
         temp_message = None
         last_update_time = asyncio.get_running_loop().time()
         start_time = time.time()
-        token_count = 0
+
+        # Track the number of tokens generated in this response
+        tokens_this_response = 0
 
         # Callback function to stop token generation
         def stop_on_token_callback(token_id, token_string):
-            if self.stop_requested and '.' in token_string:
+            if self.stop_requested:
                 return False
             return True
 
         try:
             # Generate response tokens and handle them according to Discord's message length constraints
-            for token in self.session.generate(content, max_tokens=1024, temp=0.7, top_k=40, top_p=0.4, min_p=0.0, repeat_penalty=1.18, repeat_last_n=64, n_batch=128, streaming=True, callback=stop_on_token_callback):
+            for token in self.session.generate(content, max_tokens=1024, temp=0.7, top_k=40, top_p=0.4, min_p=0.0, repeat_penalty=1.18, repeat_last_n=64, n_batch=256, streaming=True, callback=stop_on_token_callback):
                 response += token
-                token_count += 1
+                tokens_this_response += 1
+
                 if len(response) > 1975:
                     if not initial_response_sent:
                         temp_message = await message.channel.send(response)
@@ -167,6 +152,9 @@ class GPT4AllChat(commands.Cog):
             if self.stop_requested:
                 return
 
+            # Update the total tokens generated only once the response is fully generated
+            self.total_tokens_generated += tokens_this_response
+
             if response and temp_message:
                 await temp_message.edit(content=response)
             elif response:
@@ -174,8 +162,8 @@ class GPT4AllChat(commands.Cog):
 
             elapsed_time = time.time() - start_time
             if elapsed_time > 0:
-                tokens_per_second = token_count / elapsed_time
-                print(f'Elapsed Time: {elapsed_time:.2f} - Tokens: {token_count} - Speed: {tokens_per_second:.2f} tokens/s')
+                tokens_per_second = tokens_this_response / elapsed_time
+                print(f'Elapsed Time: {elapsed_time:.2f} - Tokens this response: {tokens_this_response} - Total Tokens: {self.total_tokens_generated} - Speed: {tokens_per_second:.2f} tokens/s')
 
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
@@ -186,5 +174,5 @@ class GPT4AllChat(commands.Cog):
         return response
 
 def setup(bot):
-    # Setup function to add this cog to the bot
+    """Setup function to add this cog to the bot."""
     bot.add_cog(GPT4AllChat(bot))
