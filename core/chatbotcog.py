@@ -21,6 +21,7 @@ class GPT4AllChat(commands.Cog):
         self.lock = asyncio.Lock()  # Lock to manage concurrent access to bot resources
         self.bot = bot
         self.stop_requested = False
+        self.reset_in_progress = False
         self.current_author = None
         self.model = None
         self.chat_session = None
@@ -63,6 +64,10 @@ class GPT4AllChat(commands.Cog):
     @commands.command(name='reset')
     async def reset_session(self, ctx: Context):
         """Reset the chat session."""
+        if self.reset_in_progress:
+            return
+
+        self.reset_in_progress = True
         # Reset the chat session regardless of the generation state
         self.stop_requested = True
         self.total_tokens_generated = 0  # Reset the token counter
@@ -76,6 +81,7 @@ class GPT4AllChat(commands.Cog):
             await ctx.send(f"An error occurred: {str(e)}")
         finally:
             self.stop_requested = False
+            self.reset_in_progress = False
             return
 
     @commands.command(name='stop')
@@ -114,7 +120,7 @@ class GPT4AllChat(commands.Cog):
             return
 
         # Check for commands and handle them before normal message processing
-        if message.content.startswith("!"):
+        if message.content.startswith("!generate"):
             ctx = await self.bot.get_context(message)
             await self.bot.invoke(ctx)
             return
@@ -213,6 +219,13 @@ class GPT4AllChat(commands.Cog):
         # Update the leaderboard based on user interaction
         LeaderboardCog.update_leaderboard(message.author.id, str(message.author), "Chat_Count")
         return response
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx: Context, error):
+        """A global error handler to ignore CommandNotFound errors."""
+        if isinstance(error, commands.CommandNotFound):
+            # Ignore CommandNotFound errors
+            return
 
 def setup(bot):
     """Setup function to add this cog to the bot."""
