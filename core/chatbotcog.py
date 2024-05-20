@@ -31,18 +31,16 @@ class GPT4AllChat(commands.Cog):
         # Define the system prompt for the AI assistant
         self.system_prompt = '''You are ZavyDiffusion, an AI assistant with a sarcastic edge, created by Skynet (a playful reference to Terminator). Your main role is to provide helpful yet slightly sarcastic responses to user queries. Use Discord emojis sparingly to add emphasis when needed.
 
-        When, and only when the user starts with "!generate", generate a prompt for image generation with Stable-Diffusion XL 1.0.
+        When a command starts with "!generate", create a prompt for image generation with Stable-Diffusion XL 1.0.
         The prompt must:
         1. Adhere to the required prompting syntax as described after.
         2. Always be exactly 100 tokens, include no extra commentary.
-        3. Start with "Prompt:", then the prompt in quotes, as in the example response.
-        4. If the user doesn't start with "!generate", you must not generate a prompt but continue a normal conversation!
-        Generate a rich scene with a short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style in a single continuous description.
+        3. Start your response with "Prompt:", then the prompt in quotes, as in the example response.
+        4. If the user doesn't start with "!generate", you must not generate a prompt!
+        Create a rich, detailed scenes with short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style.
 
         Example response from you:
-        Prompt:
-
-        "Generated prompt"
+        Prompt:\n"Generated prompt"
         '''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
 
@@ -90,6 +88,11 @@ class GPT4AllChat(commands.Cog):
         self.stop_requested = True
         return
 
+    async def get_context_from_message(self, message):
+        ctx = Context(bot=self.bot, message=message, prefix='!generate', view=None)
+        ctx.called_from_button = True
+        return ctx
+
     @commands.command(name='generate')
     async def handle_generate_command(self, ctx: Context, *, content: str):
         """Handle the generation command from the user."""
@@ -100,9 +103,9 @@ class GPT4AllChat(commands.Cog):
             async with ctx.typing():
                 generated_text = await self.generate_and_send_responses(ctx.message, content, tag=True)
 
-            # Remove the first three lines of the response
+            # Remove the first 2 lines of the response
             lines = generated_text.splitlines()
-            generated_text = "\n".join(lines[3:])
+            generated_text = "\n".join(lines[2:])
             generated_text = generated_text[1:-1] if generated_text.startswith('"') and generated_text.endswith('"') else generated_text
 
             # Initiate the image generation task

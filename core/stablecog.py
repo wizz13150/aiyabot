@@ -167,7 +167,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     @option(
         'scheduler',
         str,
-        description='The scheduler type to use for generation.',
+        description='The schedule type to use for generation.',
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.scheduler_autocomplete),
     )
@@ -790,7 +790,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 upscaled_images_metadata = []
 
                 # adjust values
-                custom_scale, denoising_strength = (2.1, 0.52) if queue_object.adetailer == 'Details++' else (1, 0.10)
+                custom_scale, denoising_strength = (2.1, queue_object.strength) if queue_object.adetailer == 'Details++' else (1, 0.10)
                 tile_width = int(queue_object.width * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.width * custom_scale)
                 tile_height = int(queue_object.height * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.height * custom_scale)
                 queue_object.width = int(queue_object.width * custom_scale)
