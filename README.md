@@ -18,6 +18,9 @@ A Discord bot interface for Stable Diffusion
 
 # - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
 
+It's in 'text-completion' mode, not 'chat' mode. This will complete the entered prompt, but will not rephrase.<br>
+Then you can select some options, a style, or LoRas (you can click several times on buttons, for several choices).
+
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/e59d32e6-fe4f-4d43-9d53-9127d96cb393)
 
 
