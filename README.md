@@ -12,11 +12,23 @@ A Discord bot interface for Stable Diffusion
 
 # - To generate an image from text, use the /Draw command and include your prompt as the query.
 
+Command options:
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/038cbde5-642b-4e0f-9063-c00c0b38b9e8)
+
+Result:
+
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/a8fa1151-0047-4366-b01a-615cdd801b1c)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/97068bcc-431a-43bd-b2be-912119ffd96d)
 
 
 # - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
+
+Command options:
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/839640e9-7dcd-4b12-9187-0c036a13f8f4)
+
+Result:
 
 It's in 'text-completion' mode, not 'chat' mode. This will complete the entered prompt, but will not rephrase.<br>
 Then you can select some options, a style, or LoRas (you can click several times on buttons, for several choices).
@@ -26,6 +38,12 @@ Then you can select some options, a style, or LoRas (you can click several times
 
 
 # - To generate a video from a text, use the /Deforum command and include your text, with a correct syntax, and options as the query.
+
+Command options :
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/577f4b6e-306b-49ca-9794-f125de7bfc8f)
+
+Result:
 
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/2169d7f4-8db6-42e1-a3f8-46362cc81bac)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/cd66badc-ad6e-4f64-8f6f-87787b5b6208)
