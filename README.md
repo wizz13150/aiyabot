@@ -1,5 +1,6 @@
 # Customized version of the bot. 
-Also require to install 3 extensions: ControlNet (Openpose and IPAdapter), Deforum and ADetailer.
+Also require to install 3 extensions: ControlNet (Openpose and IPAdapter), Deforum and ADetailer.<br>
+Currently dedicated to [ZavyChromaXL](https://civitai.com/models/119229?modelVersionId=490254)
 # AIYA
 
 A Discord bot interface for Stable Diffusion
