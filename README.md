@@ -40,11 +40,11 @@ Then you can select some options, a style, or LoRas (you can click several times
 # - To generate a video from a text, use the /Deforum command and include your text, with a correct syntax, and options as the query.
 
 Command options :
-
+(preset option is not functionnal yet)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/577f4b6e-306b-49ca-9794-f125de7bfc8f)
 
 Result:
-
+(preset option is not functionnal yet)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/2169d7f4-8db6-42e1-a3f8-46362cc81bac)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/cd66badc-ad6e-4f64-8f6f-87787b5b6208)
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/28830477-839a-4762-9cf6-f68bd340e0cc)
@@ -91,6 +91,7 @@ Use '!stop' to stop the current text generation. Use '!reset' to reset the conve
 - /settings command - set per-channel defaults for supported options (_[see Notes](https://github.com/Kilvoctu/aiyabot#notes)!_):
   - also can set maximum steps limit and max batch count limit.
   - refresh (update AIYA's options with any changes from Web UI).
+- /deforum command - generation an animation from text. (preset option is not functionnal yet)
 - /identify command - create a caption for your image or get metadata from an image.
 - /generate command - generate prompts from text (text-completion) using a GPT2 model.
 - /queue command - shows the size of each queue and the 5 next items in queues.
