@@ -322,7 +322,7 @@ class GlobalQueue:
                                     image_data = base64.b64decode(data["current_image"])
                                     if not image_data:
                                         file = None
-                                        await asyncio.sleep(1)
+                                        await asyncio.sleep(3)
                                     else:
                                         image = Image.open(io.BytesIO(image_data))
 
@@ -339,7 +339,7 @@ class GlobalQueue:
                                 except Exception as e:
                                     image_file = None
                             else:
-                                await asyncio.sleep(1)
+                                await asyncio.sleep(3)
 
                             # adjust job output to the running task
                             if job == "scripts_txt2img":
@@ -390,17 +390,8 @@ class GlobalQueue:
 
 
 async def process_dream(self, queue_object: DrawObject | UpscaleObject | IdentifyObject | DeforumObject):
-    try:
-        print(f"Type of self: {type(self)}")  # Must be the method with dream
-
-        if not hasattr(self, 'dream'):
-            print("Error: 'self' does not have the method 'dream'.")
-            return
-        
-        GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
-        GlobalQueue.dream_thread.start()
-    except Exception as e:
-        print(f"Failed to start dream thread: {str(e)}")
+    GlobalQueue.dream_thread = Thread(target=self.dream, args=(GlobalQueue.event_loop, queue_object))
+    GlobalQueue.dream_thread.start()
 
 async def process_generate(generate_cog, queue_object: GenerateObject):
     GlobalQueue.generate_thread = Thread(target=generate_cog.dream, args=(
