@@ -55,7 +55,7 @@ https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b
 
 
 # - To chat with the llama3 model, tag or reply to the bot to chat.
-Start with !generate to let the chatbot to prompt and generate an image. (Draft feature, more or less functionnal)
+Start with !generate to let the chatbot to prompt and generate an image. (Draft feature, more or less functionnal). <br>
 Use '!stop' to stop the current text generation. Use '!reset' to reset the conversation/chat session.
 
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/8a07cf52-bbfd-464c-8911-b5f3a6e8b6e0)
