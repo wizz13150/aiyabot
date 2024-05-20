@@ -31,54 +31,57 @@ Result:
 https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b1778f7119
 
 
-# - To chat with the llama3 model, tag or reply to the bot to chat. 
-Start with !generate to let the chatbot to prompt and generate. (Draft feature, more or less functionnal)
+# - To chat with the llama3 model, tag or reply to the bot to chat.
+Start with !generate to let the chatbot to prompt and generate an image. (Draft feature, more or less functionnal)
+Use '!stop' to stop the current text generation. Use '!reset' to reset the conversation/chat session.
 
 ![image](https://github.com/wizz13150/aiyabot/assets/22177081/8a07cf52-bbfd-464c-8911-b5f3a6e8b6e0)
 
 
 ### Currently supported options for /Draw
 
-- negative prompts
+- random prompt generation
+- negative prompt
 - swap model/checkpoint (_[see wiki](https://github.com/Kilvoctu/aiyabot/wiki/Model-swapping)_)
 - sampling steps
 - width/height
+- size ratio (some resolution presets)
 - CFG scale
 - sampling method
+- schedule type
 - seed
 - Web UI styles
+- random style selection
 - extra networks (hypernetwork, LoRA)
-- face restoration
 - high-res fix
 - CLIP skip
 - img2img
 - denoising strength
 - batch count
-- Poseref (ControlNet, openpose)
-- ADetailer (Faces, Hands, or Both)
-- IPAdapter (ControlNet, ipadapter)
+- ADetailer (Faces, Hands, or Both. Include a "Details++" choice, generate a 9MPixels image, using an Ultimate SD Upscale workflow)
+- Poseref (ControlNet for SDXL, openpose)
+- IPAdapter (ControlNet for SDXL, ipadapter)
 
 
 #### Bonus features
 
 - /settings command - set per-channel defaults for supported options (_[see Notes](https://github.com/Kilvoctu/aiyabot#notes)!_):
-  - also can set maximum steps limit and max batch count limit
-  - refresh (update AIYA's options with any changes from Web UI)
-- /identify command - create a caption for your image.
-- /generate command - generate a prompt from text.
-- /meta command - get metadata from an image.
+  - also can set maximum steps limit and max batch count limit.
+  - refresh (update AIYA's options with any changes from Web UI).
+- /identify command - create a caption for your image or get metadata from an image.
+- /generate command - generate prompts from text (text-completion) using a GPT2 model.
 - /queue command - shows the size of each queue and the 5 next items in queues.
 - /leaderboard command - display a user leaderboard.
 - /stats command - shows how many /draw commands have been used.
 - /info command - basic usage guide, other info, and download batch images.
 - /upscale command - resize your image.
 - live preview during generation.
-- chatbot using gpt4all to run llama3-8B (using gpt4all to run a gguf version on a 8gb AMD card)
+- chatbot using gpt4all to run llama3-8B-instruct (using gpt4all to run a gguf version on small Nvidia or AMD cards, or CPU). (Not fully implemented yet, testing)
 - buttons - certain outputs will contain buttons.
   - 🖋 - edit prompt, then generate a new image with same parameters.
   - 🎲 - randomize seed, then generate a new image with same parameters.
   - 📋 - view the generated image's information.
-  - ⬆️ - upscale the generated image with defaults. Batch grids require use of the drop downs
+  - ⬆️ - upscale the generated image with defaults. Batch grids require use of the drop downs.
   - ❌ - deletes the generated image.
 - dropdown menus - batch images produce two drop down menus for the first 25 images.
   - The first menu prompts the bot to send only the images that you select at single images
