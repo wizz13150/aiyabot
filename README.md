@@ -91,7 +91,7 @@ Use '!stop' to stop the current text generation. Use '!reset' to reset the conve
 - /settings command - set per-channel defaults for supported options (_[see Notes](https://github.com/Kilvoctu/aiyabot#notes)!_):
   - also can set maximum steps limit and max batch count limit.
   - refresh (update AIYA's options with any changes from Web UI).
-- /deforum command - generation an animation from text. (preset option is not functionnal yet)
+- /deforum command - generate an animation from text (preset option is not functionnal yet).
 - /identify command - create a caption for your image or get metadata from an image.
 - /generate command - generate prompts from text (text-completion) using a GPT2 model.
 - /queue command - shows the size of each queue and the 5 next items in queues.
