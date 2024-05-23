@@ -1,5 +1,6 @@
 # Customized version of the bot. 
-Also require to install 3 extensions: ControlNet, Deforum and ADetailer.
+Also require to install 3 extensions: ControlNet (Openpose and IPAdapter), Deforum and ADetailer.<br>
+Currently dedicated to [ZavyChromaXL](https://civitai.com/models/119229?modelVersionId=490254)
 # AIYA
 
 A Discord bot interface for Stable Diffusion
@@ -10,14 +11,13 @@ A Discord bot interface for Stable Diffusion
 
 # - To generate an image from text, use the /Draw command and include your prompt as the query.
 
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/268950b2-dbba-48f2-8fa4-41da8604d4d4)
-
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/65249939-5ad1-4f16-aa91-6934b356996e)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/a8fa1151-0047-4366-b01a-615cdd801b1c)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/97068bcc-431a-43bd-b2be-912119ffd96d)
 
 
 # - To generate a prompt from a couple of words, use the /Generate command and include your text as the query.
 
-![image](https://github.com/wizz13150/aiyabot/assets/22177081/74efc7ae-c9a9-4971-a90e-390985f5cc80)
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/e59d32e6-fe4f-4d43-9d53-9127d96cb393)
 
 
 
@@ -32,45 +32,57 @@ Result:
 https://github.com/wizz13150/aiyabot/assets/22177081/39dd5090-3622-4f96-a3cf-84b1778f7119
 
 
+# - To chat with the llama3 model, tag or reply to the bot to chat.
+Start with !generate to let the chatbot to prompt and generate an image. (Draft feature, more or less functionnal)
+Use '!stop' to stop the current text generation. Use '!reset' to reset the conversation/chat session.
+
+![image](https://github.com/wizz13150/aiyabot/assets/22177081/8a07cf52-bbfd-464c-8911-b5f3a6e8b6e0)
+
 
 ### Currently supported options for /Draw
 
-- negative prompts
+- random prompt generation
+- negative prompt
 - swap model/checkpoint (_[see wiki](https://github.com/Kilvoctu/aiyabot/wiki/Model-swapping)_)
 - sampling steps
 - width/height
+- size ratio (some resolution presets)
 - CFG scale
 - sampling method
+- schedule type
 - seed
 - Web UI styles
+- random style selection
 - extra networks (hypernetwork, LoRA)
-- face restoration
 - high-res fix
 - CLIP skip
 - img2img
 - denoising strength
 - batch count
-- Poseref (ControlNet, openpose)
-- ADetailer (Faces, Hands, or Both)
+- ADetailer (Faces, Hands, or Both. Include a "Details++" choice, generate a 9MPixels image, using an Ultimate SD Upscale workflow)
+- Poseref (ControlNet for SDXL, openpose)
+- IPAdapter (ControlNet for SDXL, ipadapter)
+
 
 #### Bonus features
 
 - /settings command - set per-channel defaults for supported options (_[see Notes](https://github.com/Kilvoctu/aiyabot#notes)!_):
-  - also can set maximum steps limit and max batch count limit
-  - refresh (update AIYA's options with any changes from Web UI)
-- /identify command - create a caption for your image.
-- /generate command - generate a prompt from text.
-- /meta command - get metadata from an image.
+  - also can set maximum steps limit and max batch count limit.
+  - refresh (update AIYA's options with any changes from Web UI).
+- /identify command - create a caption for your image or get metadata from an image.
+- /generate command - generate prompts from text (text-completion) using a GPT2 model.
 - /queue command - shows the size of each queue and the 5 next items in queues.
 - /leaderboard command - display a user leaderboard.
 - /stats command - shows how many /draw commands have been used.
 - /info command - basic usage guide, other info, and download batch images.
 - /upscale command - resize your image.
+- live preview during generation.
+- chatbot using gpt4all to run llama3-8B-instruct (using gpt4all to run a gguf version on small Nvidia or AMD cards, or CPU). (Not fully implemented yet, testing)
 - buttons - certain outputs will contain buttons.
   - 🖋 - edit prompt, then generate a new image with same parameters.
   - 🎲 - randomize seed, then generate a new image with same parameters.
   - 📋 - view the generated image's information.
-  - ⬆️ - upscale the generated image with defaults. Batch grids require use of the drop downs
+  - ⬆️ - upscale the generated image with defaults. Batch grids require use of the drop downs.
   - ❌ - deletes the generated image.
 - dropdown menus - batch images produce two drop down menus for the first 25 images.
   - The first menu prompts the bot to send only the images that you select at single images
