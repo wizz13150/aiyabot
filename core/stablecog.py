@@ -9,7 +9,7 @@ import random
 import requests
 import time
 import traceback
-from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from PIL import Image, PngImagePlugin
 from discord import option
 from discord.ext import commands
@@ -46,29 +46,44 @@ class GPT2ModelSingleton:
     def get_instance(cls):
         if cls._instance is None:
             cls._instance = cls()
-            cls._load_model()
         return cls._instance
 
     @classmethod
-    def _load_model(cls):
-        model_path = "core/WizzGPT2-v2"
-        cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        cls.model = AutoModelForCausalLM.from_pretrained(model_path)
-        print("Load WIZZGPTV2")
+    def set_model_and_tokenizer(cls, model, tokenizer):
+        cls.model = model
+        cls.tokenizer = tokenizer
         cls.pipe = pipeline('text-generation', model=cls.model, tokenizer=cls.tokenizer, max_length=75, temperature=1.1, top_k=24, repetition_penalty=1.35, eos_token_id=cls.tokenizer.eos_token_id, num_return_sequences=1, early_stopping=True)
+        print("Model and tokenizer set in GPT2ModelSingleton")
 
 
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
-    ctx_parse = discord.ApplicationContext
-
     def __init__(self, bot, called_from_button=False):
         self.bot = bot
-        # load the gpt2 model to use for random_prompt
+        self.models = bot.models
+        self.tokenizers = bot.tokenizers
+        self.current_model = "WizzGPTV2"
+        self.pipe = None
+
+        # Initialiser le pipeline si ce n'est pas appelé depuis un bouton
         if not called_from_button:
-            gpt2_singleton = GPT2ModelSingleton.get_instance()
-            self.pipe = gpt2_singleton.pipe
-        else:
-            self.pipe = None
+            self._initialize_pipeline()
+
+    def _initialize_pipeline(self):
+        model = self.models[self.current_model]
+        tokenizer = self.tokenizers[self.current_model]
+        eos_token_id = tokenizer.eos_token_id
+        self.pipe = pipeline(
+            'text-generation',
+            model=model,
+            tokenizer=tokenizer,
+            max_length=75,
+            temperature=1.1,
+            top_k=24,
+            repetition_penalty=1.35,
+            eos_token_id=eos_token_id,
+            num_return_sequences=1,
+            early_stopping=True
+        )
 
     if len(settings.global_var.size_range) == 0:
         size_auto = discord.utils.basic_autocomplete(settingscog.SettingsCog.size_autocomplete)
@@ -77,8 +92,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
     async def generate_prompt_async(self, prompt: str):
         if self.pipe is None:
-            gpt2_singleton = GPT2ModelSingleton.get_instance()
-            self.pipe = gpt2_singleton.pipe
+            self._initialize_pipeline()
         loop = asyncio.get_running_loop()
         res = await loop.run_in_executor(None, lambda: self.pipe(prompt))
         generated_text = res[0]['generated_text']

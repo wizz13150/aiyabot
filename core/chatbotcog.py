@@ -51,10 +51,10 @@ class GPT4AllChat(commands.Cog):
         """Initialize the chatbot model."""
         try:
             self.n_ctx = 8192 # Context size
-            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=96, verbose=True)
+            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_1.gguf", device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=96, verbose=True)
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
             self.session = self.chat_session.__enter__()
-            print(f'LLama3 chatbot loaded. Session:\n{self.session}')
+            print(f'-- LLama3 chatbot loaded. --')
             return
         except Exception as e:
             logger.error(f"Error initializing the model: {str(e)}")
@@ -69,6 +69,7 @@ class GPT4AllChat(commands.Cog):
         # Reset the chat session regardless of the generation state
         self.stop_requested = True
         self.total_tokens_generated = 0  # Reset the token counter
+
         try:
             self.chat_session.__exit__(None, None, None)  # Close the existing session
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
@@ -87,11 +88,6 @@ class GPT4AllChat(commands.Cog):
         """Stop the current generation."""
         self.stop_requested = True
         return
-
-    async def get_context_from_message(self, message):
-        ctx = Context(bot=self.bot, message=message, prefix='!generate', view=None)
-        ctx.called_from_button = True
-        return ctx
 
     @commands.command(name='generate')
     async def handle_generate_command(self, ctx: Context, *, content: str):
@@ -151,9 +147,6 @@ class GPT4AllChat(commands.Cog):
 
     async def generate_and_send_responses(self, message, content, tag):
         """Generate and send responses to the user message."""
-        if self.stop_requested:
-            return
-
         # Check if we need to reintroduce the system prompt
         if self.total_tokens_generated >= (self.n_ctx - 512):
             content = f"{self.system_prompt}\n{content}"
@@ -203,9 +196,6 @@ class GPT4AllChat(commands.Cog):
                     if current_time - last_update_time >= 1.25:
                         await temp_message.edit(content=response)
                         last_update_time = current_time
-
-            if self.stop_requested:
-                return
 
             # Update the total tokens generated only once the response is fully generated
             self.total_tokens_generated += tokens_this_response
