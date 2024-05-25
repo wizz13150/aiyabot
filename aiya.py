@@ -8,7 +8,6 @@ from core import settings
 from core.logging import get_logger
 from dotenv import load_dotenv
 from core.queuehandler import GlobalQueue
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # Load environment variables
 load_dotenv()
@@ -25,48 +24,24 @@ bot.logger = get_logger(__name__)
 settings.startup_check()
 settings.files_check()
 
-# first, load the gpt2 model for text-completion
-use_generate = os.getenv("USE_GENERATE", 'True')
-enable_generate = use_generate.lower() in ('true', '1', 't')
-if enable_generate:
-    print(f"/generate command is ENABLED due to USE_GENERATE={use_generate}")
-    
-    # Load model(s), to be available for stablecog
-    model_paths = {
-        "WizzGPTV2": "core/WizzGPT2-v2",
-        # "InsomniaV2": "core/Insomnia-v2",
-        # "DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2"
-    }
-    models = {}
-    tokenizers = {}
-    for model_name, model_path in model_paths.items():
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModelForCausalLM.from_pretrained(model_path)
-        models[model_name] = model
-        tokenizers[model_name] = tokenizer
-
-    # Pass models and tokenizers to bot
-    bot.models = models
-    bot.tokenizers = tokenizers
-    
-    print(f"GPT2 model loaded for text-completion")
-
 # Load extensions
 bot.load_extension('core.settingscog')
 bot.load_extension('core.stablecog')
 bot.load_extension('core.upscalecog')
 bot.load_extension('core.identifycog')
 bot.load_extension('core.infocog')
+#bot.load_extension('core.metacog')
 bot.load_extension('core.leaderboardcog')
 bot.load_extension('core.deforumcog')
 
-# Then load the generate is enabled
+use_generate = os.getenv("USE_GENERATE", 'True')
+enable_generate = use_generate.lower() in ('true', '1', 't')
 if enable_generate:
+    print(f"/generate command is ENABLED due to USE_GENERATE={use_generate}")
     bot.load_extension('core.generatecog')
 else:
     print(f"/generate command is DISABLED due to USE_GENERATE={use_generate}")
 
-# Finally load the chatbot
 bot.load_extension('core.chatbotcog')
 
 # Stats slash command

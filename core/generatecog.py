@@ -350,8 +350,13 @@ class GenerateCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.models = bot.models
-        self.tokenizers = bot.tokenizers
+        self.models = {}
+        self.tokenizers = {}
+        for model_name, model_path in self.model_paths.items():
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = AutoModelForCausalLM.from_pretrained(model_path)
+            self.models[model_name] = model
+            self.tokenizers[model_name] = tokenizer
         self.current_model = "WizzGPTV2"
 
     def get_model_and_tokenizer(self, model_name):
