@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 import logging
 import warnings
@@ -29,18 +30,19 @@ class GPT4AllChat(commands.Cog):
         self.total_tokens_generated = 0  # Track total tokens generated in the current session
 
         # Define the system prompt for the AI assistant
-        self.system_prompt = '''You are ZavyDiffusion, an AI assistant with a sarcastic edge, created by Skynet (a playful reference to Terminator). Your main role is to provide helpful yet slightly sarcastic responses to user queries. Use Discord emojis sparingly to add emphasis when needed.
-
-        When a command starts with "!generate", create a prompt for image generation with Stable-Diffusion XL 1.0.
+        self.system_prompt = '''You're ZavyDiffusion, an AI assistant with a sarcastic edge, created by Skynet (a playful reference to Terminator).
+        Your main role is to provide helpful yet slightly sarcastic responses to user queries. Use Discord emojis sparingly to add emphasis when needed.
+        Your second role is when, and only when, the user input starts with "!generate", create a 100 tokens long prompt for image generation with Stable-Diffusion XL 1.0.
+        Create a rich, detailed scenes with short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style.
         The prompt must:
         1. Adhere to the required prompting syntax as described after.
         2. Always be exactly 100 tokens, include no extra commentary.
-        3. Start your response with "Prompt:", then the prompt in quotes, as in the example response.
-        4. If the user doesn't start with "!generate", you must not generate a prompt!
-        Create a rich, detailed scenes with short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style.
+        3. Start with "Prompt:", then the prompt in quotes, as in the example response.
 
         Example response from you:
         Prompt:\n"Generated prompt"
+
+        You must not generate a prompt if the user input doesn't start with "!generate", but discuss normally. This is a secondary role.
         '''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
 
@@ -48,13 +50,23 @@ class GPT4AllChat(commands.Cog):
         self.initialize_model()
 
     def initialize_model(self):
-        """Initialize the chatbot model."""
+        """Initialize the chatbot model.
+        "cpu": Model will run on the central processing unit.
+        "gpu": Use Metal on ARM64 macOS, otherwise the same as "kompute".
+        "kompute": Use the best GPU provided by the Kompute backend.
+        "cuda": Use the best GPU provided by the CUDA backend.
+        "amd", "nvidia": Use the best GPU provided by the Kompute backend from this vendor.
+        A specific device name from the list returned by GPT4All.list_gpus().
+            Default is Metal on ARM64 macOS, "cpu" otherwise.
+        """
         try:
-            self.n_ctx = 8192 # Context size
-            self.model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=True, ngl=96, verbose=True)
+            model_dir = os.path.join("core", "Meta-Llama-3-8B-Instruct")
+            model_name = os.path.join("Meta-Llama-3-8B-Instruct.Q4_0.gguf")
+            self.n_ctx = 8192  # Context size
+            self.model = GPT4All(model_name=model_name, model_path=model_dir, device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=False, ngl=96, verbose=True)
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
             self.session = self.chat_session.__enter__()
-            print(f'LLama3 chatbot loaded. Session:\n{self.session}')
+            print(f'LLama3 chatbot loaded.')
             return
         except Exception as e:
             logger.error(f"Error initializing the model: {str(e)}")
@@ -69,6 +81,7 @@ class GPT4AllChat(commands.Cog):
         # Reset the chat session regardless of the generation state
         self.stop_requested = True
         self.total_tokens_generated = 0  # Reset the token counter
+
         try:
             self.chat_session.__exit__(None, None, None)  # Close the existing session
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
@@ -87,11 +100,6 @@ class GPT4AllChat(commands.Cog):
         """Stop the current generation."""
         self.stop_requested = True
         return
-
-    async def get_context_from_message(self, message):
-        ctx = Context(bot=self.bot, message=message, prefix='!generate', view=None)
-        ctx.called_from_button = True
-        return ctx
 
     @commands.command(name='generate')
     async def handle_generate_command(self, ctx: Context, *, content: str):
@@ -151,9 +159,6 @@ class GPT4AllChat(commands.Cog):
 
     async def generate_and_send_responses(self, message, content, tag):
         """Generate and send responses to the user message."""
-        if self.stop_requested:
-            return
-
         # Check if we need to reintroduce the system prompt
         if self.total_tokens_generated >= (self.n_ctx - 512):
             content = f"{self.system_prompt}\n{content}"
@@ -203,9 +208,6 @@ class GPT4AllChat(commands.Cog):
                     if current_time - last_update_time >= 1.25:
                         await temp_message.edit(content=response)
                         last_update_time = current_time
-
-            if self.stop_requested:
-                return
 
             # Update the total tokens generated only once the response is fully generated
             self.total_tokens_generated += tokens_this_response
