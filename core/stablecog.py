@@ -51,11 +51,10 @@ class GPT2ModelSingleton:
 
     @classmethod
     def _load_model(cls):
-        #model_path = "core/WizzGPT2-v2"
-        model_path = "core/Insomnia-v2"
+        model_path = "core/WizzGPT2-v2"
         cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
         cls.model = AutoModelForCausalLM.from_pretrained(model_path)
-        print("Load InsomniaV2")
+        print("Load WizzGPT2-v2")
         cls.pipe = pipeline('text-generation', model=cls.model, tokenizer=cls.tokenizer, max_length=75, temperature=1.1, top_k=24, repetition_penalty=1.35, eos_token_id=cls.tokenizer.eos_token_id, num_return_sequences=1, early_stopping=True)
 
 
