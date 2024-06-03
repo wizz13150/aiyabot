@@ -72,9 +72,11 @@ class HighResButton(Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction):
+        channel_id = str(interaction.channel.id)
         if self.style == 1:  # Default color
             self.style = 3  # Set this button to green
-            self.parent_view.hires = "4x_foolhardy_Remacri"
+            self.parent_view.hires = settings.read(channel_id)['upscaler_1']
+            print(f'self.parent_view.hires: {self.parent_view.hires}')
         else:
             self.style = 1  # Set the button to default color
             self.parent_view.hires = None
@@ -342,9 +344,9 @@ class GenerateView(View):
 
 class GenerateCog(commands.Cog):
     model_paths = {
-            "WizzGPTV2": "core/WizzGPT2-v2",
-            #"InsomniaV2": "core/Insomnia-v2",
-            #"DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2"
+            "WizzGPTV2": "core/WizzGPTv2",
+            "InsomniaV2": "core/Insomnia-v2",
+            "DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2"
         }
     model_choices = list(model_paths.keys())
 

@@ -51,10 +51,9 @@ class GPT2ModelSingleton:
 
     @classmethod
     def _load_model(cls):
-        model_path = "core/WizzGPT2-v2"
+        model_path = "core/WizzGPTv2"
         cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
         cls.model = AutoModelForCausalLM.from_pretrained(model_path)
-        print("Load WIZZGPTV2")
         cls.pipe = pipeline('text-generation', model=cls.model, tokenizer=cls.tokenizer, max_length=75, temperature=1.1, top_k=24, repetition_penalty=1.35, eos_token_id=cls.tokenizer.eos_token_id, num_return_sequences=1, early_stopping=True)
 
 
@@ -277,7 +276,6 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             extra_net: Optional[str] = None,
                             adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
-                            #pag: Optional[bool] = False,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,
                             init_image: Optional[discord.Attachment] = None,
@@ -609,33 +607,10 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 }
                 payload.update(img_payload)
                 
-            # Perturbed Attention Guidance payload
-            #print(f'queue_object.pag: {queue_object.pag}')
-            #if queue_object.pag is True:
-            #    pag_payload = {
-            #        "Incantations": {
-            #            "Perturbed Attention Guidance": {
-            #            "enable_pag": True,
-            #            "scale": 0.5,
-            #            "scale": 4,
-            #            "unet_block": "middle"
-            #            }
-            #        }
-            #    }
-                    #{
-                    
-                    #"enable_pag": True,
-                    #"adaptive_scale": 0.5, # PAG dampening factor, it penalizes PAG during late denoising stages, resulting in overall speedup: 0.0 means no penalty and 1.0 completely removes PAG.
-                    #"scale": 4, #PAG scale, has some resemblance to CFG scale - higher values can both increase structural coherence of the image and oversaturate/fry it entirely.
-                    #"unet_block": "middle"#, #Part of U-Net to which PAG is applied, original paper suggests to use middle.
-                    #"unet_block_id": "" #Id of U-Net layer in a selected block to which PAG is applied. PAG can be applied only to layers containing Self-attention blocks
-                #}
-                #payload['alwayson_scripts'] = payload.get('alwayson_scripts', {})
-                #payload['alwayson_scripts'].update(pag_payload)
-
             # if Details++ then use hires
             if queue_object.adetailer == 'Details++' and queue_object.highres_fix == 'Disabled':
-                queue_object.highres_fix = '4x_foolhardy_Remacri'
+                channel_id = str(queue_object.ctx.channel.id)
+                queue_object.highres_fix = settings.read(channel_id)['upscaler_1']
 
             # hires payload
             if queue_object.highres_fix != 'Disabled':

@@ -329,7 +329,7 @@ class GlobalQueue:
                                         # Envoyer une image de taille réduite
                                         new_width = int(image.width * 0.85)
                                         new_height = int(image.height * 0.85)
-                                        image = image.resize((new_width, new_height), Image.ANTIALIAS)
+                                        image = image.resize((new_width, new_height), Image.LANCZOS)
 
                                         with contextlib.ExitStack() as stack:
                                             buffer = stack.enter_context(io.BytesIO())
