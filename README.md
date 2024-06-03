@@ -1,7 +1,13 @@
 # Customized version of the bot. 
-Also require to install 3 extensions: ControlNet (Openpose and IPAdapter), Deforum and ADetailer.<br>
+Also need to manually install 3 extensions in the webui: 
+- ControlNet (Openpose and IPAdapter, for the related /Draw options)
+https://github.com/Mikubill/sd-webui-controlnet
+- Deforum (for the /Deforum command)
+https://github.com/deforum-art/sd-webui-deforum
+- ADetailer (for the related /Draw option)
+https://github.com/Bing-su/adetailer<br>
+
 Currently dedicated to [ZavyChromaXL](https://civitai.com/models/119229?modelVersionId=490254) <br>
-May require some manual edit to get it to run, as some values are hardcoded.
 # AIYA
 
 A Discord bot interface for Stable Diffusion
