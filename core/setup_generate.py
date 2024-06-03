@@ -21,7 +21,7 @@ os.makedirs(model_folder_2, exist_ok=True)
 
 base_url_2 = "https://huggingface.co/recoilme/insomnia_v2/resolve/main/"
 
-files_to_download_2 = ["config.json", "pytorch_model.bin", "tokenizer.json", "training_args.bin"]
+files_to_download_2 = ["config.json", "pytorch_model.bin", "tokenizer.json"]
 
 for file in files_to_download_2:
     filepath = os.path.join(model_folder_2, file)
