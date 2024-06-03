@@ -1,9 +1,8 @@
 py-cord
 python-dotenv
 requests
-Pillow
+pillow
 tomlkit
 urlextract
 transformers
 torch
-gpt4all

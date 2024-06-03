@@ -1,7 +1,6 @@
 py-cord
 python-dotenv
 requests
-Pillow
+pillow
 tomlkit
 urlextract
-gpt4all
