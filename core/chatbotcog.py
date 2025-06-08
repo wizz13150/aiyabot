@@ -3,8 +3,8 @@ import os
 import time
 import logging
 import warnings
+import threading
 from discord.ext import commands
-from gpt4all import GPT4All
 from discord.ext.commands import Context
 
 from core.leaderboardcog import LeaderboardCog
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message="Shard ID None h
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class GPT4AllChat(commands.Cog):
+class LlamaChatCog(commands.Cog):
     def __init__(self, bot):
         self.lock = asyncio.Lock()  # Lock to manage concurrent access to bot resources
         self.bot = bot
@@ -25,8 +25,8 @@ class GPT4AllChat(commands.Cog):
         self.reset_in_progress = False
         self.current_author = None
         self.model = None
-        self.chat_session = None
-        self.session = None
+        self.tokenizer = None
+        self.backend = os.getenv("LLAMA_BACKEND", "llama_cpp")
         self.total_tokens_generated = 0  # Track total tokens generated in the current session
         self.highres_fix_value = None
         self.size_ratio_value = None
@@ -56,6 +56,7 @@ class GPT4AllChat(commands.Cog):
         #Prompt:\n"Abandoned Lighthouse | Weathered Stone Walls & Rusty Iron Accents | Seagulls Flying Above, Soaring Through the Air | A Storm Brewing in the Distance, with Dark Clouds Gathering | The Waves Crashing against the Rocks below"
 
         # Initialize the chatbot model
+        self.history = [{"role": "system", "content": self.system_prompt}]
         self.initialize_model()
 
     def initialize_model(self):
@@ -65,18 +66,24 @@ class GPT4AllChat(commands.Cog):
         "kompute": Use the best GPU provided by the Kompute backend.
         "cuda": Use the best GPU provided by the CUDA backend.
         "amd", "nvidia": Use the best GPU provided by the Kompute backend from this vendor.
-        A specific device name from the list returned by GPT4All.list_gpus().
-            Default is Metal on ARM64 macOS, "cpu" otherwise.
+        Default is Metal on ARM64 macOS, "cpu" otherwise.
         """
         try:
-            model_dir = os.path.join("core", "Meta-Llama-3.1-8B-Instruct-gguf")
-            model_name = os.path.join("Meta-Llama-3.1-8B-Instruct-Q4_0.gguf")
-            self.n_ctx = 10244  # Context size
-            self.model = GPT4All(model_name=model_name, model_path=model_dir, device="nvidia", n_ctx=self.n_ctx, n_threads=8, allow_download=False, ngl=33, verbose=True)
-            self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
-            self.session = self.chat_session.__enter__()
-            print(f'LLama3.1 chatbot loaded.')
-            return
+            if self.backend == "llama_cpp":
+                import llama_cpp
+                model_dir = os.path.join("core", "Meta-Llama-3-8B-Instruct")
+                model_path = os.path.join(model_dir, "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
+                self.n_ctx = 8192
+                self.model = llama_cpp.Llama(model_path=model_path, n_ctx=self.n_ctx, n_gpu_layers=35)
+                print("llama_cpp backend loaded")
+            elif self.backend == "transformers":
+                from transformers import AutoTokenizer, AutoModelForCausalLM
+                import torch
+                model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+                self.n_ctx = self.model.config.max_position_embeddings
+                print("transformers backend loaded")
         except Exception as e:
             logger.error(f"Error initializing the model: {str(e)}")
 
@@ -92,12 +99,10 @@ class GPT4AllChat(commands.Cog):
         self.total_tokens_generated = 0  # Reset the token counter
 
         try:
-            self.chat_session.__exit__(None, None, None)  # Close the existing session
-            self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
-            self.session = self.chat_session.__enter__()
+            self.history = [{"role": "system", "content": self.system_prompt}]
             await ctx.send("Chat session has been reset!")
         except Exception as e:
-            logger.error(f"Error closing the session or model: {str(e)}")
+            logger.error(f"Error resetting the session: {str(e)}")
             await ctx.send(f"An error occurred: {str(e)}")
         finally:
             self.stop_requested = False
@@ -208,9 +213,10 @@ class GPT4AllChat(commands.Cog):
         """Generate and send responses to the user message."""
         # Check if we need to reintroduce the system prompt
         if self.total_tokens_generated >= (self.n_ctx * 0.75):
-            content = f"{self.system_prompt}\n{content}"
-            self.total_tokens_generated = 0  # Reset the token counter
-
+            self.history = [{"role": "system", "content": self.system_prompt}]
+            self.total_tokens_generated = 0
+        
+        self.history.append({"role": "user", "content": content})
         response = f"<@{message.author.id}>\n"
         initial_response_sent = False
         temp_message = None
@@ -220,42 +226,75 @@ class GPT4AllChat(commands.Cog):
         # Track the number of tokens generated in this response
         tokens_this_response = 0
 
-        # Callback function to stop token generation
-        def stop_on_token_callback(token_id, token_string):
-            if self.stop_requested:
-                return False
-            return True
-
         try:
-            # Generate response tokens and handle them according to Discord's message length constraints
-            for token in self.session.generate(content, max_tokens=1024, temp=0.9, top_k=40, top_p=0.4, min_p=0.0, repeat_penalty=1.18, repeat_last_n=64, n_batch=1024, streaming=True, callback=stop_on_token_callback):
-                response += token
-                tokens_this_response += 1
-
-                if len(response) > 1975:
-                    if not initial_response_sent:
-                        temp_message = await message.channel.send(response)
-                        initial_response_sent = True
-                    else:
-                        await temp_message.edit(content=response)
-                        if tag:
-                            temp_message = await message.channel.send(f"{message.author.mention} ")
-                            response = f"<@{message.author.id}>\n"
+            if self.backend == "llama_cpp":
+                stream = self.model.create_chat_completion(messages=self.history, stream=True, max_tokens=1024, temperature=0.7, top_p=0.4)
+                for chunk in stream:
+                    if self.stop_requested:
+                        break
+                    token = chunk["choices"][0].get("delta", {}).get("content", "")
+                    response += token
+                    tokens_this_response += 1
+                    if len(response) > 1975:
+                        if not initial_response_sent:
+                            temp_message = await message.channel.send(response)
+                            initial_response_sent = True
                         else:
-                            temp_message = await message.channel.send("")
-                            response = ""
-                elif not initial_response_sent and response:
-                    if tag:
-                        temp_message = await message.channel.send(f"{message.author.mention} {response}")
-                    else:
-                        temp_message = await message.channel.send(f"{response}")
-                    initial_response_sent = True
-                elif response:
-                    current_time = asyncio.get_running_loop().time()
-                    if current_time - last_update_time >= 1.25:
-                        await temp_message.edit(content=response)
-                        last_update_time = current_time
-
+                            await temp_message.edit(content=response)
+                            if tag:
+                                temp_message = await message.channel.send(f"{message.author.mention} ")
+                                response = f"<@{message.author.id}>\n"
+                            else:
+                                temp_message = await message.channel.send("")
+                                response = ""
+                    elif not initial_response_sent and response:
+                        if tag:
+                            temp_message = await message.channel.send(f"{message.author.mention} {response}")
+                        else:
+                            temp_message = await message.channel.send(f"{response}")
+                        initial_response_sent = True
+                    elif response:
+                        current_time = asyncio.get_running_loop().time()
+                        if current_time - last_update_time >= 1.25:
+                            await temp_message.edit(content=response)
+                            last_update_time = current_time
+            else:
+                from transformers import TextIteratorStreamer
+                import torch
+                inputs = self.tokenizer.apply_chat_template(self.history, return_tensors="pt").to(self.model.device)
+                streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+                thread = threading.Thread(target=self.model.generate, kwargs={"inputs": inputs, "max_new_tokens": 1024, "temperature": 0.7, "top_p": 0.4, "streamer": streamer})
+                thread.start()
+                for token in streamer:
+                    if self.stop_requested:
+                        break
+                    response += token
+                    tokens_this_response += 1
+                    if len(response) > 1975:
+                        if not initial_response_sent:
+                            temp_message = await message.channel.send(response)
+                            initial_response_sent = True
+                        else:
+                            await temp_message.edit(content=response)
+                            if tag:
+                                temp_message = await message.channel.send(f"{message.author.mention} ")
+                                response = f"<@{message.author.id}>\n"
+                            else:
+                                temp_message = await message.channel.send("")
+                                response = ""
+                    elif not initial_response_sent and response:
+                        if tag:
+                            temp_message = await message.channel.send(f"{message.author.mention} {response}")
+                        else:
+                            temp_message = await message.channel.send(f"{response}")
+                        initial_response_sent = True
+                    elif response:
+                        current_time = asyncio.get_running_loop().time()
+                        if current_time - last_update_time >= 1.25:
+                            await temp_message.edit(content=response)
+                            last_update_time = current_time
+                thread.join()
+            
             # Update the total tokens generated only once the response is fully generated
             self.total_tokens_generated += tokens_this_response
 
@@ -273,6 +312,11 @@ class GPT4AllChat(commands.Cog):
             logger.error(f"Error generating response: {str(e)}")
             await message.channel.send(f"An error occurred: {str(e)}")
 
+        if response:
+            # strip mention before saving to history
+            history_text = response.split('\n', 1)[1] if '\n' in response else response
+            self.history.append({"role": "assistant", "content": history_text})
+        
         # Update the leaderboard based on user interaction
         LeaderboardCog.update_leaderboard(message.author.id, str(message.author), "Chat_Count")
         return response
@@ -286,4 +330,4 @@ class GPT4AllChat(commands.Cog):
 
 def setup(bot):
     """Setup function to add this cog to the bot."""
-    bot.add_cog(GPT4AllChat(bot))
+    bot.add_cog(LlamaChatCog(bot))
