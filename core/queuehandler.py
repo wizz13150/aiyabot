@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 import discord
 import re
+import time
 from discord.ui import View, Button
 from threading import Thread
 
@@ -10,7 +11,6 @@ import io
 import base64
 import contextlib
 
-
 from core import settings
 
 
@@ -18,7 +18,7 @@ from core import settings
 class DrawObject:
     def __init__(self, cog, ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height,
                  guidance_scale, sampler, seed, strength, init_image, batch, styles, highres_fix,
-                 clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter, scheduler, view):
+                 clip_skip, extra_net, epoch_time, adetailer, scheduler, distilled_cfg_scale, view):# poseref, ipadapter
         self.cog = cog
         self.ctx = ctx
         self.simple_prompt = simple_prompt
@@ -29,6 +29,7 @@ class DrawObject:
         self.width = width
         self.height = height
         self.guidance_scale = guidance_scale
+        self.distilled_cfg_scale = distilled_cfg_scale
         self.sampler = sampler
         self.scheduler = scheduler
         self.seed = seed
@@ -37,10 +38,9 @@ class DrawObject:
         self.batch = batch
         self.styles = styles
         self.adetailer = adetailer
-        self.poseref = poseref
-        self.ipadapter = ipadapter
+        #self.poseref = poseref
+        #self.ipadapter = ipadapter
         self.highres_fix = highres_fix
-        #self.pag = pag
         self.clip_skip = clip_skip
         self.extra_net = extra_net
         self.epoch_time = epoch_time
@@ -51,12 +51,15 @@ class DrawObject:
 
 # the queue object for Deforum command
 class DeforumObject:
-    def __init__(self, cog, ctx, deforum_settings, view):
+    def __init__(self, cog, ctx, deforum_settings, view, job_id=None):
         self.cog = cog
         self.ctx = ctx
         self.deforum_settings = deforum_settings
         self.prompt = deforum_settings["prompts"]
         self.view = view
+        self.user_id = ctx.author.id
+        self.data_model = ""
+        self.job_id = job_id
         self.is_done = False
 
 
@@ -250,8 +253,9 @@ class GlobalQueue:
     @staticmethod
     async def handle_rate_limit(exception: discord.HTTPException, default_sleep=2):
         if exception.status == 429:
-            retry_after = float(exception.headers.get("Retry-After", default_sleep))
-            await asyncio.sleep(retry_after)
+            #retry_after = float(exception.headers.get("Retry-After", default_sleep))
+            #await asyncio.sleep(retry_after)
+            ...
             return True
         return False
 
@@ -266,14 +270,22 @@ class GlobalQueue:
                     prompt_value = queue_object.deforum_settings["prompts"]
                     prompt = str(prompt_value)
                 else:
-                    prompt = getattr(queue_object, "prompt", "No prompt")  # Utilisez un prompt générique si non disponible
+                    prompt = getattr(queue_object, "prompt", "No prompt")
             except AttributeError:
                 prompt = "No prompt"
+            
+            if isinstance(prompt, dict):
+                try:
+                    short_prompt = str(list(prompt.values())[0])[:125] + "..."
+                except Exception:
+                    short_prompt = "No prompt"
+            else:
+                short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
 
             # check for an existing progression message, if yes delete the previous one
             async for old_msg in ctx.channel.history(limit=25):
                 if old_msg.embeds:
-                    if old_msg.embeds[0].title == "──── Running Job Progression ────":
+                    if old_msg.embeds[0].title == "        ──── Running Job Progression ────":
                         await old_msg.delete()
 
             # send first message to discord, Initialization
@@ -282,12 +294,12 @@ class GlobalQueue:
 
             progress_msg = await ctx.send(embed=embed, view=view)
 
-            # progress loop
+            # Progress loop
             while not queue_object.is_done:
                 async with aiohttp.ClientSession() as session:
                     async with session.get("http://127.0.0.1:7860/sdapi/v1/progress?skip_current_image=false") as response:
-                        
-                        # handle potential rate limit by Discord
+
+                        # Handle potential rate limit by Discord
                         try:
                             await progress_msg.edit(embed=embed, view=view)
                         except discord.HTTPException as e:
@@ -299,14 +311,14 @@ class GlobalQueue:
                             progress = round(data["progress"] * 100)
                             job = data['state']['job']
 
-                            # parsing the 'job' string to get the current and total number of batches
+                            # Parsing the 'job' string to get the current and total number of batches
                             match = re.search(r'Batch (\d+) out of (\d+)', job)
                             if match:
                                 current_batch, total_batches = map(int, match.groups())
                             else:
                                 current_batch, total_batches = 1, 1
 
-                            progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)                    
+                            progress_bar = GlobalQueue.create_progress_bar(progress, total_batches=total_batches)
                             eta_relative = round(data["eta_relative"])
                             if prompt:
                                 short_prompt = prompt[:125] + "..." if len(prompt) > 125 else prompt
@@ -321,64 +333,94 @@ class GlobalQueue:
                                 try:
                                     image_data = base64.b64decode(data["current_image"])
                                     if not image_data:
-                                        file = None
-                                        await asyncio.sleep(3)
+                                        #print("Error: image_data is empty after base64 decoding.")
+                                        image_file = None
+                                        await asyncio.sleep(2)
                                     else:
                                         image = Image.open(io.BytesIO(image_data))
+                                        #print("Preview image successfully decoded and opened (format:", image.format, ")")
 
-                                        # Envoyer une image de taille réduite
-                                        new_width = int(image.width * 0.85)
-                                        new_height = int(image.height * 0.85)
+                                        # Always convert to RGB to support PNGs with alpha channel
+                                        if image.mode in ("RGBA", "P"):
+                                            image = image.convert("RGB")
+
+                                        new_width = int(image.width * 1.5)
+                                        new_height = int(image.height * 1.5)
                                         image = image.resize((new_width, new_height), Image.LANCZOS)
 
                                         with contextlib.ExitStack() as stack:
                                             buffer = stack.enter_context(io.BytesIO())
                                             image.save(buffer, 'JPEG')
                                             buffer.seek(0)
-                                            image_file = discord.File(fp=buffer, filename=f'{queue_object.seed}.jpeg')
+                                            # ----------- SEED FIX -----------
+                                            if hasattr(queue_object, "seed"):
+                                                filename = f"{queue_object.seed}.jpeg"
+                                            elif hasattr(queue_object, "deforum_settings") and "seed" in queue_object.deforum_settings:
+                                                filename = f"{queue_object.deforum_settings['seed']}.jpeg"
+                                            else:
+                                                filename = "preview.jpeg"
+                                            image_file = discord.File(fp=buffer, filename=filename)
+                                        #print("Preview image prepared for Discord")
                                 except Exception as e:
+                                    #print("Error while processing preview image:", repr(e))
                                     image_file = None
                             else:
-                                await asyncio.sleep(3)
+                                #print("No preview image found (current_image is empty)")
+                                await asyncio.sleep(2)
 
-                            # adjust job output to the running task
+                            # Adjust job output to the running task
                             if job == "scripts_txt2img":
                                 job = "Batch 1 out of 1"
                             elif job.startswith("task"):
                                 job = "Job running locally by the owner"
                             elif job == "(unknown)":
-                                job = "Ultimate Upscale"   
-                            elif job == "scripts_img2img":  
-                                job = "Prepare img2img script"                             
+                                job = "Ultimate Upscale"
+                            elif job == "scripts_img2img":
+                                job = "Prepare img2img script"
 
-                            # check recent messages and Spam the bottom, like pinned
+                            # Check recent messages and ensure the progress message is at the bottom
                             latest_message = await ctx.channel.history(limit=1).flatten()
                             latest_message = latest_message[0] if latest_message else None
                             if latest_message and latest_message.id != progress_msg.id:
                                 await progress_msg.delete()
-                                progress_msg = await ctx.send(embed=embed)
+                                progress_msg = await ctx.send(embed=embed, view=view)
 
-                            # message update
-                            embed = discord.Embed(title=f"──── Running Job Progression ────", 
-                                                description=f"**Prompt**: {short_prompt}\n📊 {progress_bar} {progress}%\n⏳ **Remaining**: {eta_relative} seconds\n🔍 **Current Step**: {sampling_step}/{sampling_steps}  -  {job}\n👥 **Queued Jobs**: {queue_size}", 
-                                                color=discord.Color.random())
+                            # Message update with fields
+                            embed = discord.Embed(
+                                title="──── Running Job Progression ────",
+                                color=discord.Color.random()
+                            )
+
+                            # Clear existing fields
+                            embed.clear_fields()
+
+                            # Add fields to the embed
+                            embed.add_field(name="**Prompt**", value=short_prompt, inline=False)
+                            embed.add_field(name="📊 Progress", value=f"{progress_bar} {progress}%", inline=False)
+                            embed.add_field(name="⏳ Remaining", value=f"{eta_relative} sec", inline=True)
+                            embed.add_field(name="🔍 Current Step", value=f"{sampling_step}/{sampling_steps} - {job}", inline=True)
+                            embed.add_field(name="👥 Queued Jobs", value=str(queue_size), inline=True)
+
+                            # Set the image in the embed
                             embed.set_image(url=f"attachment://{queue_object.seed}.jpeg")
 
+                            # Edit the progress message
                             await progress_msg.edit(embed=embed, file=image_file, view=view)
 
-                            # wait 2 or 5 to not be rate limited by discord
+                            # Wait to avoid being rate limited by Discord
                             if isinstance(queue_object, DrawObject):
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(2)
                             elif isinstance(queue_object, DeforumObject):
-                                await asyncio.sleep(5)
+                                await asyncio.sleep(2)
                             else:
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(2)
 
                         except Exception as e:
                             pass
 
-            # done, delete, clear priority flag
+            # Done, delete the progress message
             await progress_msg.delete()
+
 
     def process_queue():
         def start(target_queue: list[DrawObject | UpscaleObject | IdentifyObject | GenerateObject | DeforumObject]):

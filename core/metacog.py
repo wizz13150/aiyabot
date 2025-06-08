@@ -157,7 +157,7 @@ class MetaCog(commands.Cog):
         return None  # Return None if extraction failed
 
     # Define a slash command for extracting metadata
-    @commands.slash_command(name='meta', description='Extract Generation datas from an image', guild_only=True)
+    @commands.slash_command(name='meta', description='Extract Generation datas from an image')
     @option(
         'init_image',
         discord.Attachment,

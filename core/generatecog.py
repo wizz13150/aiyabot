@@ -4,8 +4,6 @@ from asyncio import AbstractEventLoop, get_event_loop, run_coroutine_threadsafe
 from discord import option
 from discord.ui import Button, View, Select
 from discord.ext import commands
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers import pipeline
 from typing import Optional
 
 from core import queuehandler
@@ -15,6 +13,12 @@ from core.queuehandler import GlobalQueue
 from core.stablecog import StableCog
 from core.leaderboardcog import LeaderboardCog
 
+USE_LLAMA_CPP = True
+
+if USE_LLAMA_CPP:
+    from llama_cpp import Llama
+else:
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 class RatioButton(Button):
     FORMATS = [
@@ -340,30 +344,40 @@ class GenerateView(View):
         self.update_select_menus()
         await interaction.edit_original_response(view=self)
 
+model_paths = {
+    "WizzGPTV6": "core/WizzGPT6"
+}
+model_choices = list(model_paths.keys())
 
 class GenerateCog(commands.Cog):
-    model_paths = {
-            "WizzGPTV2": "core/WizzGPT2-v2",
-            "InsomniaV2": "core/Insomnia-v2",
-            "DistilGPT2-V2": "core/DistilGPT2-Stable-Diffusion-V2"
-        }
-    model_choices = list(model_paths.keys())
-
     def __init__(self, bot):
         self.bot = bot
-        self.models = {}
-        self.tokenizers = {}
-        for model_name, model_path in self.model_paths.items():
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-            model = AutoModelForCausalLM.from_pretrained(model_path)
-            self.models[model_name] = model
-            self.tokenizers[model_name] = tokenizer
-        self.current_model = "WizzGPTV2"
+        self.current_model = "WizzGPTV6"
+
+        if USE_LLAMA_CPP:
+            self.llm = Llama(
+                model_path="core/WizzGPT6/WizzGPTv6.Q8_0.gguf",
+                n_ctx=1024,
+                n_threads=8,
+                use_mlock=True,
+                verbose=False
+            )
+        else:
+            self.models = {}
+            self.tokenizers = {}
+            for model_name, model_path in model_paths.items():
+                tokenizer = AutoTokenizer.from_pretrained(model_path)
+                model = AutoModelForCausalLM.from_pretrained(model_path)
+                self.models[model_name] = model
+                self.tokenizers[model_name] = tokenizer
 
     def get_model_and_tokenizer(self, model_name):
-        return self.models.get(model_name), self.tokenizers.get(model_name)
+        if USE_LLAMA_CPP:
+            return self.llm, None
+        else:
+            return self.models.get(model_name), self.tokenizers.get(model_name)
 
-    @commands.slash_command(name='generate', description='Generates a prompt from text', guild_only=True)
+    @commands.slash_command(name='generate', description='Generates a prompt from text')
     @option(
         'model',
         str,
@@ -396,9 +410,15 @@ class GenerateCog(commands.Cog):
         required=False,
     )
     @option(
+        'top_p',
+        float,
+        description='Controls diversity via nucleus sampling: lower values focus on more likely tokens. Default: 0.92',
+        required=False,
+    )
+    @option(
         'top_k',
         int,
-        description='The number of tokens to sample from at each step. Default: 24',
+        description='The number of tokens to sample from at each step. Default: 40',
         required=False,
     )
     @option(
@@ -407,19 +427,27 @@ class GenerateCog(commands.Cog):
         description='The penalty value for each repetition of a token. Default: 1.35',
         required=False,
     )
-    async def generate_handler(self, ctx: discord.ApplicationContext, *,
-                           prompt: str,
-                           num_prompts: Optional[int] = 5,
-                           max_length: Optional[int] = 75,
-                           temperature: Optional[float] = 1.1,
-                           top_k: Optional[int] = 24,
-                           repetition_penalty: Optional[float] = 1.35,
-                           model: Optional[str] = "WizzGPTV2"):
-        
+    @option(
+        'no_repeat_ngram_size',
+        int,
+        description='Ensures no repeated sequences of this length in the output. Default: 5',
+        required=False,
+    )
+    async def generate_handler(self, ctx: discord.ApplicationContext, *, prompt: str, 
+                            num_prompts: Optional[int] = 5, 
+                            max_length: Optional[int] = 75, 
+                            temperature: Optional[float] = 1.1, 
+                            top_p: Optional[float] = 0.92,
+                            top_k: Optional[int] = 40, 
+                            repetition_penalty: Optional[float] = 1.35,
+                            no_repeat_ngram_size: Optional[int] = 5, 
+                            model: Optional[str] = "WizzGPTV6"):
         self.current_model = model
-        tokenizer = self.tokenizers[self.current_model]
-        eos_token_id = tokenizer.eos_token_id
-        self.pipe = pipeline('text-generation', model=self.models[self.current_model], tokenizer=tokenizer, max_length=75, temperature=0.7, top_k=8, repetition_penalty=1.2, eos_token_id=eos_token_id, num_beams=1)
+        model_instance, tokenizer = self.get_model_and_tokenizer(self.current_model)
+
+        if not USE_LLAMA_CPP:
+            eos_token_id = tokenizer.eos_token_id
+            self.pipe = pipeline('text-generation', model=model_instance, tokenizer=tokenizer, max_length=max_length, temperature=temperature, top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, no_repeat_ngram_size=no_repeat_ngram_size , eos_token_id=eos_token_id, num_beams=1)
 
         called_from_reroll = getattr(ctx, 'called_from_reroll', False)
         current_prompt = 0
@@ -509,39 +537,38 @@ class GenerateCog(commands.Cog):
 
     def dream(self, event_loop: AbstractEventLoop, queue_object: queuehandler.GenerateObject, num_prompts: int, max_length: int, temperature: float, top_k: int, repetition_penalty: float, model: str):
         try:
-            # Choisissez le modèle et le tokenizer en fonction de l'argument 'model'
-            selected_model = self.models[model]
-            selected_tokenizer = self.tokenizers[model]
-            selected_eos_token_id = selected_tokenizer.eos_token_id
+            prompts = []  # Liste locale pour stocker les prompts générés
 
-            # Configurez le pipeline avec le modèle et le tokenizer sélectionnés
-            pipe = pipeline('text-generation', model=selected_model, tokenizer=selected_tokenizer, max_length=max_length, temperature=temperature, top_k=top_k, repetition_penalty=repetition_penalty, eos_token_id=selected_eos_token_id)
-
-            # Générez le texte
-            prompts = []
-            for i in range(num_prompts):
-                res = pipe(
-                    queue_object.prompt,
-                    max_length=max_length,
-                    temperature=temperature,
-                    top_k=top_k,
-                    repetition_penalty=repetition_penalty,
-                    eos_token_id=selected_eos_token_id
+            if USE_LLAMA_CPP:
+                for _ in range(num_prompts):
+                    res = self.llm(
+                        queue_object.prompt,
+                        max_tokens=max_length,
+                        temperature=temperature,
+                        top_p=0.92,
+                        top_k=top_k,
+                        repeat_penalty=repetition_penalty
                     )
-                generated_text = res[0]['generated_text']
-                prompts.append(generated_text)
+                    generated_text = res["choices"][0]["text"]
+                    prompts.append(queue_object.prompt + generated_text)
+                    LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
+            else:
+                selected_model = self.models[model]
+                selected_tokenizer = self.tokenizers[model]
+                selected_eos_token_id = selected_tokenizer.eos_token_id
+                pipe = pipeline('text-generation', model=selected_model, tokenizer=selected_tokenizer, max_length=max_length, temperature=temperature, top_k=top_k, repetition_penalty=repetition_penalty, eos_token_id=selected_eos_token_id)
+                for _ in range(num_prompts):
+                    res = pipe(queue_object.prompt)
+                    generated_text = res[0]['generated_text']
+                    prompts.append(generated_text)
+                    LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
 
-                # Mise à jour du classement
-                LeaderboardCog.update_leaderboard(queue_object.ctx.author.id, str(queue_object.ctx.author), "Generate_Count")
-
-            # Planifiez la tâche pour créer la vue et envoyer le message
             event_loop.create_task(self.send_with_view(prompts, queue_object.ctx, queue_object.prompt, num_prompts, max_length, temperature, top_k, repetition_penalty))
 
         except Exception as e:
             embed = discord.Embed(title='Generation failed', description=f'{e}\n{traceback.print_exc()}', color=0x00ff00)
             event_loop.create_task(queue_object.ctx.channel.send(embed=embed))
 
-        # check each queue for any remaining tasks
         if queuehandler.GlobalQueue.generate_queue:
             event_loop.create_task(queuehandler.process_generate(self, queuehandler.GlobalQueue.generate_queue.pop(0)))
 

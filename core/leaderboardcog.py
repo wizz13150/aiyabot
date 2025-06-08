@@ -30,7 +30,7 @@ class LeaderboardCog(commands.Cog):
     @staticmethod
     def check_and_create_csv():
         if not os.path.exists("leaderboard.csv"):
-            with open("leaderboard.csv", "w", newline='') as csvfile:
+            with open("leaderboard.csv", "w", newline='', encoding="utf-8") as csvfile:
                 fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count", "Chat_Count"]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
@@ -51,7 +51,7 @@ class LeaderboardCog(commands.Cog):
         
         #print(f' -- Updating {action} Leaderboard for {username} to ')
 
-        with open("leaderboard.csv", "r", newline='') as csvfile:
+        with open("leaderboard.csv", "r", newline='', encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 leaderboard_data.append(row)
@@ -70,21 +70,21 @@ class LeaderboardCog(commands.Cog):
             new_entry[action] = "1"
             leaderboard_data.append(new_entry)
 
-        with open("leaderboard.csv", "w", newline='') as csvfile:
+        with open("leaderboard.csv", "w", newline='', encoding="utf-8") as csvfile:
             fieldnames = ["User_ID", "Username", "Image_Count", "Identify_Count", "Deforum_Count", "Generate_Count", "Chat_Count"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for entry in leaderboard_data:
                 writer.writerow(entry)
 
-    @commands.slash_command(name='leaderboard', description='Show the Leaderboard', guild_only=True)
+    @commands.slash_command(name='leaderboard', description='Show the Leaderboard')
     async def show_leaderboard(self, ctx):
         print(f'/Leaderboard request from {ctx.author.name}')
 
         try:
             leaderboard_data = []
 
-            with open("leaderboard.csv", "r", newline='') as csvfile:
+            with open("leaderboard.csv", "r", newline='', encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
                     # Validate data

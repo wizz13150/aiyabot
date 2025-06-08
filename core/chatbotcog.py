@@ -28,6 +28,9 @@ class GPT4AllChat(commands.Cog):
         self.chat_session = None
         self.session = None
         self.total_tokens_generated = 0  # Track total tokens generated in the current session
+        self.highres_fix_value = None
+        self.size_ratio_value = None
+        self.adetailer_value = None
 
         # Define the system prompt for the AI assistant
         self.system_prompt = '''You're ZavyDiffusion, an AI assistant with a sarcastic edge, created by Skynet (a playful reference to Terminator).
@@ -36,15 +39,21 @@ class GPT4AllChat(commands.Cog):
         Create a rich, detailed scenes with short visual description of the subject, composition, details and features, lighting and color, rendering technical terms, and artistic style.
         The prompt must:
         1. Adhere to the required prompting syntax as described after.
-        2. Always be exactly 100 tokens, include no extra commentary.
-        3. Start with "Prompt:", then the prompt in quotes, as in the example response.
+        2. Build a descriptive prompt using tags and phrases that create an epic scene
+        3. Always be exactly 100 tokens, include no extra commentary.
+        4. Striclty start with "Prompt:", then the prompt in quotes, as in the example response.
 
-        Example response from you:
+        Example responses from you:
         Prompt:\n"Generated prompt"
-
-        You must not generate a prompt if the user input doesn't start with "!generate", but discuss normally. This is a secondary role.
+        
+        Don't be biased with these examples in your responses. Be creative !
         '''
         self.prompt_template = '<|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{1}<|eot_id|>\n\n' # llama3
+
+        #Prompt:\n"Mythical Dragon | Ancient Warrior | Scale-Like Armor & Wingspan | Fiery Breath Illuminating a Dark Cave | Majestic Castle Ruins in the Background | Awe-Inspiring Mountain Range with Snow-Capped Peaks | Glowing Ember Effects on His Scales"
+        #Prompt:\n"Rustic Farmhouse Kitchen | Wooden Beams & Brick Fireplace | Copper Pots and Pans Hanging from the Ceiling | Fresh Flowers Arranged on a Table, Filling the Air with Sweet Fragrance | A Warm Light Spills through the Window, Illuminating the Scene"
+        #Prompt:\n"Modern Art Gallery | White Walls & Polished Floors | Contemporary Sculptures and Paintings Adorning the Space | Soft Lighting Creates an Atmosphere of Sophistication | Visitors Mingle in Conversation, Discussing the Meaning behind Each Piece"
+        #Prompt:\n"Abandoned Lighthouse | Weathered Stone Walls & Rusty Iron Accents | Seagulls Flying Above, Soaring Through the Air | A Storm Brewing in the Distance, with Dark Clouds Gathering | The Waves Crashing against the Rocks below"
 
         # Initialize the chatbot model
         self.initialize_model()
@@ -60,13 +69,13 @@ class GPT4AllChat(commands.Cog):
             Default is Metal on ARM64 macOS, "cpu" otherwise.
         """
         try:
-            model_dir = os.path.join("core", "Meta-Llama-3-8B-Instruct")
-            model_name = os.path.join("Meta-Llama-3-8B-Instruct.Q4_0.gguf")
-            self.n_ctx = 8192  # Context size
-            self.model = GPT4All(model_name=model_name, model_path=model_dir, device="amd", n_ctx=self.n_ctx, n_threads=6, allow_download=False, ngl=96, verbose=True)
+            model_dir = os.path.join("core", "Meta-Llama-3.1-8B-Instruct-gguf")
+            model_name = os.path.join("Meta-Llama-3.1-8B-Instruct-Q4_0.gguf")
+            self.n_ctx = 10244  # Context size
+            self.model = GPT4All(model_name=model_name, model_path=model_dir, device="nvidia", n_ctx=self.n_ctx, n_threads=8, allow_download=False, ngl=33, verbose=True)
             self.chat_session = self.model.chat_session(self.system_prompt, self.prompt_template)
             self.session = self.chat_session.__enter__()
-            print(f'LLama3 chatbot loaded.')
+            print(f'LLama3.1 chatbot loaded.')
             return
         except Exception as e:
             logger.error(f"Error initializing the model: {str(e)}")
@@ -101,9 +110,40 @@ class GPT4AllChat(commands.Cog):
         self.stop_requested = True
         return
 
+    def extract_size_ratio(self, content: str):
+        """Extract the size ratio from the content."""
+        ratio_mapping = {
+            "2:3": "Portrait: 2:3 - 832x1216",
+            "3:2": "Landscape: 3:2 - 1216x832",
+            "4:3": "Fullscreen: 4:3 - 1152x896",
+            "16:9": "Widescreen: 16:9 - 1344x768",
+            "21:9": "Ultrawide: 21:9 - 1536x640",
+            "1:1": "Square: 1:1 - 1024x1024",
+            "9:16": "Tall: 9:16 - 768x1344"
+        }
+        for key in ratio_mapping:
+            if key in content:
+                content = content.replace(key, "").strip()  # Supprimer le ratio du message
+                return ratio_mapping[key], content
+        return None, content
+
     @commands.command(name='generate')
     async def handle_generate_command(self, ctx: Context, *, content: str):
         """Handle the generation command from the user."""
+        
+        # Si l'utilisateur mentionne "hires", on affecte la valeur à highres_fix_value et on supprime le terme
+        if "hires" in content.lower():
+            self.highres_fix_value = "4x_foolhardy_Remacri"
+            content = content.replace(" hires", "").strip()
+
+        # Si l'utilisateur mentionne un ratio, on affecte la valeur correspondante à size_ratio_value et on supprime le terme
+        self.size_ratio_value, content = self.extract_size_ratio(content)
+
+        # Si l'utilisateur mentionne "adetailer", on affecte la valeur à adetailer_value et on supprime le terme
+        if "adetailer" in content.lower():
+            self.adetailer_value = "Faces+Hands"
+            content = content.replace(" adetailer", "").strip()
+
         await self.lock.acquire()
         ctx = Context(bot=self.bot, message=ctx.message, prefix='!generate', view=None)
         ctx.called_from_button = True
@@ -111,21 +151,29 @@ class GPT4AllChat(commands.Cog):
             async with ctx.typing():
                 generated_text = await self.generate_and_send_responses(ctx.message, content, tag=True)
 
-            # Remove the first 2 lines of the response
-            lines = generated_text.splitlines()
-            generated_text = "\n".join(lines[2:])
-            generated_text = generated_text[1:-1] if generated_text.startswith('"') and generated_text.endswith('"') else generated_text
+            # Détection et extraction du prompt entre les guillemets après "Prompt:"
+            prompt_start = "Prompt:"
+            prompt_index = generated_text.find(prompt_start)
+            if prompt_index != -1:
+                # Trouver la première paire de guillemets après "Prompt:"
+                start_quote_index = generated_text.find('"', prompt_index)
+                end_quote_index = generated_text.find('"', start_quote_index + 1)
+                if start_quote_index != -1 and end_quote_index != -1:
+                    prompt_text = generated_text[start_quote_index + 1:end_quote_index]
 
             # Initiate the image generation task
             task = asyncio.create_task(
-                StableCog.dream_handler(ctx=ctx, prompt=generated_text,
+                StableCog.dream_handler(ctx=ctx, prompt=prompt_text,
                                         styles=None,
-                                        size_ratio=None,
-                                        adetailer=None,
-                                        highres_fix=None,
-                                        batch="2,1")
+                                        size_ratio=self.size_ratio_value,
+                                        adetailer=self.adetailer_value,
+                                        highres_fix=self.highres_fix_value,
+                                        batch="1,2")
             )
         finally:
+            self.highres_fix_value = None
+            self.size_ratio_value = None
+            self.adetailer_value = None
             self.lock.release()
         return
 
@@ -141,7 +189,6 @@ class GPT4AllChat(commands.Cog):
         # Check for commands and handle them before normal message processing
         if message.content.startswith("!generate"):
             return
-
 
         # Attempt to acquire the lock to handle the message
         if not await self.lock.acquire():
@@ -160,7 +207,7 @@ class GPT4AllChat(commands.Cog):
     async def generate_and_send_responses(self, message, content, tag):
         """Generate and send responses to the user message."""
         # Check if we need to reintroduce the system prompt
-        if self.total_tokens_generated >= (self.n_ctx - 512):
+        if self.total_tokens_generated >= (self.n_ctx * 0.75):
             content = f"{self.system_prompt}\n{content}"
             self.total_tokens_generated = 0  # Reset the token counter
 
@@ -181,7 +228,7 @@ class GPT4AllChat(commands.Cog):
 
         try:
             # Generate response tokens and handle them according to Discord's message length constraints
-            for token in self.session.generate(content, max_tokens=1024, temp=0.7, top_k=40, top_p=0.4, min_p=0.0, repeat_penalty=1.18, repeat_last_n=64, n_batch=256, streaming=True, callback=stop_on_token_callback):
+            for token in self.session.generate(content, max_tokens=1024, temp=0.9, top_k=40, top_p=0.4, min_p=0.0, repeat_penalty=1.18, repeat_last_n=64, n_batch=1024, streaming=True, callback=stop_on_token_callback):
                 response += token
                 tokens_this_response += 1
 

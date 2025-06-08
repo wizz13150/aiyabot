@@ -93,11 +93,8 @@ class DeforumCog(commands.Cog):
                         "deforum_save_gen_info_as_srt": False,
                     }
                 }) as response:
-                    # Check if the response status is 202 (Accepted)
                     if response.status == 202:
                         print("Job has been accepted for processing.")
-
-                        # Extract job_id from the response
                         data = await response.json()
                         job_id = data["job_ids"][0]
                         print(f"Received job_id: {job_id}")
@@ -107,30 +104,29 @@ class DeforumCog(commands.Cog):
 
                         while True:
                             # Check the job status
-                            job_status = await self.check_job_status(session, job_id)                            
+                            job_status = await self.check_job_status(session, job_id)
                             if job_status == "SUCCEEDED":
                                 # If the job succeeded, get the output directory
                                 job_data_url = f"{self.config['URL']}/jobs/{job_id}"
                                 async with session.get(job_data_url) as job_data_response:
                                     job_data = await job_data_response.json()
-                                    return job_data['outdir']
-                                break
+                                    outdir = job_data.get('outdir', '')
+                                    return outdir, job_id
                             elif job_status == "FAILED":
                                 print(f"Job failed. Status: {job_status}")
-                                return ""
+                                return "", job_id
                             else:
-                                #print(f"Job status: {job_status}. Waiting for completion...")
                                 await asyncio.sleep(2)
                     else:
                         print(f"Bad status code {response.status}")
                         if response.status == 422:
                             details = await response.json()
                             print(details['detail'])
-                        return ""
+                        return "", None
         except Exception as e:
             traceback.print_exc()
             print(e)
-            return ""
+            return "", None
 
     async def check_job_status(self, session, job_id):
         job_status_url = f"{self.config['URL']}/jobs"
@@ -227,7 +223,7 @@ class DeforumCog(commands.Cog):
         with open(f'{self.preset_folder}/{preset_name}.txt', 'r') as file:
             return json.load(file)
 
-    @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.', guild_only=True)
+    @commands.slash_command(name='deforum', description='Create an animation based on provided parameters.')
     @option('prompts', str, description='The prompts to generate the animation.', required=True,)
     @option('preset', str, description='Select a preset to generate the animation.', required=False, autocomplete=preset_choices)
     @option('cadence', int, description='The cadence for the animation. (default=6)', required=False, default=6)
@@ -250,7 +246,7 @@ class DeforumCog(commands.Cog):
     @option('rotation_3d_z', str, description='The 3D Z rotation to roll the canvas clockwise/ anticlockwise. (default="0:(0)"))', required=False, default="0:(0)")
     #@option('width', int, description='The width for the animation. (default=768))', required=False, default=768)
     #@option('height', int, description='The height for the animation. (default=1280))', required=False, default=1280)
-    @option('fps', int, description='The FPS for the animation. (default=112))', required=False, default=12)
+    @option('fps', int, description='The FPS for the animation. (default=12))', required=False, default=12)
     @option('max_frames', int, description='The total frames for the animation. (default=120))', required=False, default=120)
     @option('fov_schedule', str, description='Adjust the FOV. (default="0:(140)"))', required=False, default="0:(140)")
     @option('noise_schedule', str, description='Adjust the Noise Schedule. (default="0:(0)"))', required=False, default="0:(0)")
@@ -259,7 +255,7 @@ class DeforumCog(commands.Cog):
     @option('cfg_scale_schedule', str, description='Adjust the CFG Scale Schedule. (default="0:(9)"))', required=False, default="0:(9)")
     @option('antiblur_amount_schedule', str, description='Adjust the Anti-Blur Amount Schedule. (default="0:(0.25)"))', required=False, default="0:(0.25)")
     #@option('add_soundtrack', discord.Attachment, description="Attach a soundtrack MP3 file. It doesn't need to match the video duration.", required=False)
-    @option('frame_interpolation_engine', str, description='Switch the frame interpolation engine. (default="RIFE v4.6", x4 FPS)', required=False, default="RIFE v4.6", choices=["None", "FILM", "RIFE v4.6"])
+    @option('frame_interpolation_engine', str, description='Switch the frame interpolation engine. (default="FILM", x4 FPS)', required=False, default="FILM", choices=["None", "FILM", "RIFE v4.6"])
     @option('parseq_manifest', str, description='Parseq Manifest URL to use. Fields managed by Parseq override the values set in other options.', required=False, default="")
     @option('init_image',str,description='The starter URL image for generation.', required=False)
     @option('make_gif', bool, description='Produce a GIF version of the animation.', required=False, default=False)
@@ -272,7 +268,7 @@ class DeforumCog(commands.Cog):
         cadence: Optional[int] = 6,
         steps: Optional[int] = 31,
         seed: Optional[int] = -1,
-        size_ratio: Optional[str] = "Portrait: 2:3 - 768x1280",
+        size_ratio: Optional[str] = "Portrait: 2:3 - 832x1216",
         translation_x: Optional[str] = "0:(0)",
         translation_y: Optional[str] = "0:(0)",
         translation_z: Optional[str] = "0:(0.5)",
@@ -290,7 +286,7 @@ class DeforumCog(commands.Cog):
         cfg_scale_schedule: Optional[str] = "0:(9)",
         antiblur_amount_schedule: Optional[str] = "0:(0.25)",
         #add_soundtrack: discord.Attachment = None,
-        frame_interpolation_engine: Optional[str] = "RIFE v4.6",
+        frame_interpolation_engine: Optional[str] = "FILM",
         parseq_manifest: Optional[str] = "",
         init_image: Optional[str] = "",
         make_gif: Optional[bool] = False
@@ -310,12 +306,14 @@ class DeforumCog(commands.Cog):
         # ratio override width and height if size_ratio is provided
         if size_ratio and size_ratio in ratios:
             width, height = ratios[size_ratio]
+        else:
+            width, height = 832, 1216
 
         # randomize the seed if still -1, 10 digits
         if seed == -1:
             seed = random.randint(1000000000, 9999999999)
 
-        print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
+        #print(f'/Deforum request -- {ctx.author.name} -- Seed: {seed} Prompts: {prompts}\nCadence: {cadence}, Width: {width}, Height: {height}, FPS:{fps}, Seed:{seed}, Max Frames: {max_frames}')
 
         # construct a dic for the default parameters to compare
         default_params = {
@@ -339,7 +337,7 @@ class DeforumCog(commands.Cog):
             "strength_schedule": "0:(0.7)",
             "cfg_scale_schedule": "0:(9)",
             "antiblur_amount_schedule": "0:(0.25)",
-            "frame_interpolation_engine": "RIFE v4.6",
+            "frame_interpolation_engine": "FILM",
             #"add_soundtrack": discord.Attachment = None,
             "parseq_manifest": "",
             "init_image": "",
@@ -519,10 +517,10 @@ class DeforumCog(commands.Cog):
 
             # run generation
             future = run_coroutine_threadsafe(self.make_animation(deforum_settings), event_loop)
-            path = future.result()
+            outdir, job_id = future.result()
 
             # schedule the task to create the view and send the message
-            event_loop.create_task(self.post_dream(queue_object.ctx, queue_object, path))
+            event_loop.create_task(self.post_dream(queue_object.ctx, queue_object, outdir, job_id))
 
             # progression flag, job done
             queue_object.is_done = True
@@ -538,12 +536,12 @@ class DeforumCog(commands.Cog):
         GlobalQueue.process_queue()
 
     # post to discord
-    async def post_dream(self, ctx, queue_object, path):
-        if len(path) > 0:
+    async def post_dream(self, ctx, queue_object, outdir, job_id):
+        if len(outdir) > 0:
             print('Animation made.')
-            anim_file = self.find_animation(os.path.abspath(path), queue_object.deforum_settings.get('frame_interpolation_engine'))
-            settings_file = self.find_settings(os.path.abspath(path))
-            gif_file = self.find_gif(os.path.abspath(path))
+            anim_file = self.find_animation(os.path.abspath(outdir), queue_object.deforum_settings.get('frame_interpolation_engine'))
+            settings_file = self.find_settings(os.path.abspath(outdir))
+            gif_file = self.find_gif(os.path.abspath(outdir))
             result_seed = -1
             try:
                 with open(settings_file, 'r', encoding='utf-8') as sttn:

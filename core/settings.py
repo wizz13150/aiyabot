@@ -53,7 +53,7 @@ quick_upscale_resize = 2.0
 
 # AIYA won't generate if prompt has any words in the ban list
 # Separate with commas; example, ["a", "b", "c"]
-prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Cock", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
+prompt_ban_list = ["Porn", "NSFW", "Hentai", "Pussy", "Fuck", "Bitch", "Slut", "Whore", "Cunt", "BDSM", "Fap", "Masturbate", "Blowjob", "Handjob", "MILF", "Threesome", "Gangbang", "Orgy", "Deepthroat", "Sissy", "Shemale", "Swingers", "Pornstar", "Upskirt", "Downblouse", "Erotica", "Dildo", "Vibrator", "Butt plug", "Hardcore", "Softcore", "Sexting", "Cybersex", "Footjob", "Rimjob", "Bukkake", "Swallow", "Creampie", "Bondage", "Domination", "Submission", "Sadism", "Masochism", "Spanking", "Fetish", "Nipples", "Pubic", "Vagina", "Scrotum", "Testicles", "Prostate", "Ejaculation", "Orgasm", "Climax", "Squirt", "Erection", "Kinky", "Upskirt", "Glory hole", "Strapon", "Sadomasochism", "Pegging", "Fisting", "Tribbing", "Scissoring"]
 # These words will be automatically removed from the prompt
 prompt_ignore_list = []
 # Choose whether or not ignored words are displayed to user
@@ -71,6 +71,7 @@ max_steps = 100
 width = 832
 height = 1216
 guidance_scale = "6.0"
+distilled_cfg_scale = "3.5"
 sampler = "DPM++ 3M SDE"
 scheduler = "exponential"
 style = "None"
@@ -267,6 +268,8 @@ def stats_count(number):
 
 
 def messages():
+    if not global_var.wait_message:
+        return "Please wait, processing your request..."
     random_message = global_var.wait_message[random.randint(0, global_var.wait_message_count)]
     return random_message
 
@@ -318,6 +321,7 @@ def generate_template(template_pop, config):
     template_pop['width'] = config['width']
     template_pop['height'] = config['height']
     template_pop['guidance_scale'] = config['guidance_scale']
+    template_pop['distilled_cfg_scale'] = config['distilled_cfg_scale']
     template_pop['sampler'] = config['sampler']
     template_pop['scheduler'] = config['scheduler']
     template_pop['style'] = config['style']
@@ -589,8 +593,8 @@ def populate_global_vars():
     # load many values from Web UI into global variables
     r1 = s.get(global_var.url + "/sdapi/v1/samplers")
     r2 = s.get(global_var.url + "/sdapi/v1/prompt-styles")
-    r3 = s.get(global_var.url + "/sdapi/v1/face-restorers")
-    r4 = s.get(global_var.url + "/sdapi/v1/embeddings")
+    #r3 = s.get(global_var.url + "/sdapi/v1/face-restorers")
+    #r4 = s.get(global_var.url + "/sdapi/v1/embeddings")
     r5 = s.get(global_var.url + "/sdapi/v1/hypernetworks")
     r6 = s.get(global_var.url + "/sdapi/v1/upscalers")
     r7 = s.get(global_var.url + "/sdapi/v1/schedulers")
@@ -606,16 +610,16 @@ def populate_global_vars():
     global_var.style_names['None'] = ''
     for s2 in r2.json():
         global_var.style_names[s2['name']] = s2['prompt'], s2['negative_prompt']
-    for s4, shape in r4.json()['loaded'].items():
-        if shape['shape'] == 768:
-            global_var.embeddings_1.append(s4)
-        if shape['shape'] == 1024:
-            global_var.embeddings_2.append(s4)
-    for s4, shape in r4.json()['skipped'].items():
-        if shape['shape'] == 768:
-            global_var.embeddings_1.append(s4)
-        if shape['shape'] == 1024:
-            global_var.embeddings_2.append(s4)
+    #for s4, shape in r4.json()['loaded'].items():
+    #    if shape['shape'] == 768:
+    #        global_var.embeddings_1.append(s4)
+    #    if shape['shape'] == 1024:
+    #        global_var.embeddings_2.append(s4)
+    #for s4, shape in r4.json()['skipped'].items():
+    #    if shape['shape'] == 768:
+    #        global_var.embeddings_1.append(s4)
+    #    if shape['shape'] == 1024:
+    #        global_var.embeddings_2.append(s4)
     for s5 in r5.json():
         global_var.hyper_names.append(s5['name'])
     for s6 in r6.json():

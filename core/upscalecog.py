@@ -30,7 +30,7 @@ class UpscaleCog(commands.Cog):
     async def on_ready(self):
         self.bot.add_view(viewhandler.DeleteView(self))
 
-    @commands.slash_command(name='upscale', description='Upscale an image', guild_only=True)
+    @commands.slash_command(name='upscale', description='Upscale an image')
     @option(
         'init_image',
         discord.Attachment,

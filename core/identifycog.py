@@ -24,7 +24,7 @@ class IdentifyCog(commands.Cog):
     async def on_ready(self):
         self.bot.add_view(viewhandler.DeleteView(self))
 
-    @commands.slash_command(name='identify', description='Describe an image', guild_only=True)
+    @commands.slash_command(name='identify', description='Describe an image')
     @option(
         'init_image',
         discord.Attachment,

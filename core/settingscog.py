@@ -41,14 +41,41 @@ class SettingsCog(commands.Cog):
         ]
 
     def lora_autocomplete(self: discord.AutocompleteContext):
-        return [
-            lora for lora in settings.global_var.lora_names
-        ]
+        unique_loras = []
+        seen_none = False
+
+        for lora in settings.global_var.lora_names:
+            # Extraire la première valeur si c'est une liste
+            lora_name = lora[0] if isinstance(lora, list) else lora
+
+            # Vérifier si c'est 'None' et s'assurer qu'il n'est pas ajouté deux fois
+            if lora_name.lower() == "none":
+                if not seen_none:
+                    unique_loras.append(lora_name)
+                    seen_none = True
+            elif lora_name not in unique_loras:
+                unique_loras.append(lora_name)
+        
+        return unique_loras
 
     def extra_net_autocomplete(self: discord.AutocompleteContext):
-        return [
-            network for network in settings.global_var.extra_nets
-        ]
+        # Extraire la première valeur si c'est une liste, sinon conserver tel quel
+        unique_nets = []
+        seen_none = False
+
+        for network in settings.global_var.extra_nets:
+            # Extraire la première valeur si c'est une liste
+            net = network[0] if isinstance(network, list) else network
+
+            # Vérifier si c'est 'None' et s'assurer qu'il n'est pas ajouté deux fois
+            if net.lower() == "none":
+                if not seen_none:
+                    unique_nets.append(net)
+                    seen_none = True
+            elif net not in unique_nets:
+                unique_nets.append(net)
+        
+        return unique_nets
 
     def upscaler_autocomplete(self: discord.AutocompleteContext):
         return [
@@ -57,7 +84,8 @@ class SettingsCog(commands.Cog):
 
     def hires_autocomplete(self: discord.AutocompleteContext):
         return [
-            hires for hires in settings.global_var.hires_upscaler_names
+            hires[0] if isinstance(hires, list) else hires
+            for hires in settings.global_var.hires_upscaler_names
         ]
 
     # do autocomplete here to handle when max_size exceeds discord limits
@@ -71,7 +99,7 @@ class SettingsCog(commands.Cog):
     else:
         size_auto = None
 
-    @commands.slash_command(name='settings', description='Review and change channel defaults', guild_only=True)
+    @commands.slash_command(name='settings', description='Review and change channel defaults')
     @option(
         'current_settings',
         bool,

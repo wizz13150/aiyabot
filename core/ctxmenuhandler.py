@@ -69,9 +69,11 @@ async def parse_image_info(ctx, image_url, command):
         # initialize extra params
         steps, size, guidance_scale, sampler, scheduler, seed = '', '', '', '', '', ''
         style, adetailer, highres_fix, clip_skip = '', None, '', ''
-        strength, poseref, ipadapter, has_init_url = '', '', '', False
+        strength, distilled_cfg_scale, has_init_url = '', '', False # poseref, ipadapter
         if command == 'button' and ctx is not None:
             has_init_url = True
+
+        distilled_cfg_scale = settings.read(str(ctx.channel.id))['distilled_cfg_scale']
 
         # try to find extra networks
         hypernet, lora = extra_net_search(prompt_field)
@@ -103,6 +105,8 @@ async def parse_image_info(ctx, image_url, command):
                 size = line.split(': ', 1)[1]
             if 'CFG scale: ' in line:
                 guidance_scale = line.split(': ', 1)[1]
+            if 'Distilled CFG Scale: ' in line:
+                distilled_cfg_scale = line.split(': ', 1)[1]
             if 'Sampler: ' in line:
                 sampler = line.split(': ', 1)[1]
             if 'Schedule type: ' in line:
@@ -164,7 +168,7 @@ async def parse_image_info(ctx, image_url, command):
             embed.add_field(name=f'Negative prompt', value=f'``{n_prompt_field}``', inline=False)
 
         extra_params = f'Sampling steps: ``{steps}``\nSize: ``{size}``\nClassifier-free guidance scale: ' \
-                       f'``{guidance_scale}``\nSampler: ``{sampler}``\nScheduler: ``{scheduler}``\nSeed: ``{seed}``'
+                       f'``{guidance_scale}``\nDistilled CFG Scale: ``{distilled_cfg_scale}``\nSampler: ``{sampler}``\nScheduler: ``{scheduler}``\nSeed: ``{seed}``'
 
         if style:
             copy_command += f' styles:{style[0]}'
@@ -178,6 +182,9 @@ async def parse_image_info(ctx, image_url, command):
         if clip_skip:
             copy_command += f' clip_skip:{clip_skip}'
             extra_params += f'\nCLIP skip: ``{clip_skip}``'
+        if distilled_cfg_scale:
+            copy_command += f' distilled_cfg_scale:{distilled_cfg_scale}'
+            extra_params += f'\nDistilled CFG Scale: ``{distilled_cfg_scale}``'
 
         embed.add_field(name=f'Other parameters', value=extra_params, inline=False)
 
@@ -192,12 +199,12 @@ async def parse_image_info(ctx, image_url, command):
         if has_init_url:
             # not interested in adding embed fields for strength and init_image
             copy_command += f' strength:{strength} init_url:{str(ctx)}'
-        if poseref:
-            copy_command += f' poseref:{poseref}'
-            extra_params += f'\nPose Reference URL: ``{poseref}``'
-        if ipadapter:
-            copy_command += f' ipadapter:{ipadapter}'
-            extra_params += f'\nIPAdapter Reference URL: ``{ipadapter}``'
+        #if poseref:
+        #    copy_command += f' poseref:{poseref}'
+        #    extra_params += f'\nPose Reference URL: ``{poseref}``'
+        #if ipadapter:
+        #    copy_command += f' ipadapter:{ipadapter}'
+        #    extra_params += f'\nIPAdapter Reference URL: ``{ipadapter}``'
 
         embed.add_field(name=f'Command for copying', value=f'', inline=False)
         embed.set_footer(text=copy_command)
@@ -323,4 +330,3 @@ async def batch_download(ctx, message: discord.Message):
             await ctx.respond(f'<@{ctx.author.id}>, Here are the batch files you requested', files=block, view=view)
     else:
         await ctx.respond(f'<@{ctx.author.id}>, The requested image ids were not found.')
-

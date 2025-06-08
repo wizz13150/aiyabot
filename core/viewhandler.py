@@ -10,6 +10,8 @@ from core import queuehandler
 from core import settings
 from core import stablecog
 from core import upscalecog
+from core import civitaiposter
+
 
 '''
 The input_tuple index reference
@@ -33,16 +35,81 @@ input_tuple[0] = ctx
 [17] = extra_net
 [18] = epoch_time
 [19] = adetailer
-[20] = poseref
-[21] = ipadapter
-[22] = scheduler
+[20] = scheduler
+[21] = distilled_cfg_scale
 '''
+#[20] = poseref
+#[21] = ipadapter
+
 tuple_names = ['ctx', 'simple_prompt', 'prompt', 'negative_prompt', 'data_model', 'steps', 'width', 'height',
                'guidance_scale', 'sampler', 'seed', 'strength', 'init_image', 'batch', 'styles',
-               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'poseref', 'ipadapter', 'scheduler']
+               'highres_fix', 'clip_skip', 'extra_net', 'epoch_time', 'adetailer', 'scheduler', 'distilled_cfg_scale']# 'poseref', 'ipadapter'
 
+def serialize_input_tuple(input_tuple):
+    # Décompose explicitement chaque champ pour éviter toute perte !
+    return {
+        'author_id': getattr(input_tuple[0].author, "id", None),
+        'simple_prompt': input_tuple[1],
+        'prompt': input_tuple[2],
+        'negative_prompt': input_tuple[3],
+        'data_model': input_tuple[4],
+        'steps': input_tuple[5],
+        'width': input_tuple[6],
+        'height': input_tuple[7],
+        'guidance_scale': input_tuple[8],
+        'sampler': input_tuple[9],
+        'seed': input_tuple[10],
+        'strength': input_tuple[11],
+        'init_image': input_tuple[12],
+        'batch': input_tuple[13],
+        'styles': input_tuple[14],
+        'highres_fix': input_tuple[15],
+        'clip_skip': input_tuple[16],
+        'extra_net': input_tuple[17],
+        'epoch_time': input_tuple[18],
+        'adetailer': input_tuple[19],
+        #'poseref': input_tuple[20],
+        #'ipadapter': input_tuple[21],
+        'scheduler': input_tuple[20],
+        'distilled_cfg_scale': input_tuple[21]
+    }
 
-# the modal that is used for the 🖋 button
+def deserialize_input_tuple(data):
+    # Fake context pour compatibilité avec DrawView
+    class FakeAuthor:
+        def __init__(self, id):
+            self.id = id
+    class FakeCtx:
+        def __init__(self, author_id):
+            self.author = FakeAuthor(author_id)
+    ctx = FakeCtx(data['author_id'])
+    return (
+        ctx,
+        data['simple_prompt'],
+        data['prompt'],
+        data['negative_prompt'],
+        data['data_model'],
+        data['steps'],
+        data['width'],
+        data['height'],
+        data['guidance_scale'],
+        data['sampler'],
+        data['seed'],
+        data['strength'],
+        data['init_image'],
+        data['batch'],
+        data['styles'],
+        data['highres_fix'],
+        data['clip_skip'],
+        data['extra_net'],
+        data['epoch_time'],
+        data['adetailer'],
+        #data['poseref'],
+        #data['ipadapter'],
+        data['scheduler'],
+        data['distilled_cfg_scale']
+    )
+
 class DrawModal(Modal):
     def __init__(self, input_tuple) -> None:
         super().__init__(title="Change Prompt!")
@@ -189,8 +256,18 @@ class DrawModal(Modal):
                     pen[8] = float(line.split(':', 1)[1].replace(",", "."))
                 except(Exception,):
                     invalid_input = True
-                    embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is not valid for the guidance scale!",
-                                        value='Make sure you enter a number.', inline=False)
+                    embed_err.add_field(
+                        name=f"`{line.split(':', 1)[1]}` is not valid for the guidance scale!",
+                        value='Make sure you enter a number. Example: 5.5', inline=False)
+            if 'distilled_cfg_scale:' in line:
+                try:
+                    pen[21] = float(line.split(':', 1)[1].replace(",", "."))
+                    print 
+                except Exception:
+                    invalid_input = True
+                    embed_err.add_field(
+                        name=f"`{line.split(':', 1)[1]}` is not valid for distilled cfg scale!",
+                        value='Make sure you enter a number. Example: 3.5', inline=False)
             if 'sampler:' in line:
                 if line.split(':', 1)[1] in settings.global_var.sampler_names:
                     pen[9] = line.split(':', 1)[1]
@@ -201,7 +278,7 @@ class DrawModal(Modal):
                                         inline=False)
             if 'scheduler:' in line:
                 if line.split(':', 1)[1] in settings.global_var.scheduler_names:
-                    pen[22] = line.split(':', 1)[1]
+                    pen[20] = line.split(':', 1)[1]
                 else:
                     invalid_input = True
                     embed_err.add_field(name=f"`{line.split(':', 1)[1]}` is unrecognized. I know of these schedulers!",
@@ -316,8 +393,6 @@ class DrawModal(Modal):
                 await queuehandler.process_dream(draw_dream, queuehandler.DrawObject(stablecog.StableCog(self), *prompt_tuple, DrawView(prompt_tuple)))
             await interaction.response.send_message(f'<@{interaction.user.id}>, {settings.messages()}\nQueue: ``{len(queuehandler.GlobalQueue.queue)}``{prompt_output}')
 
-
-# creating the view that holds the buttons for /draw output
 class DrawView(View):
     def __init__(self, input_tuple):
         super().__init__(timeout=None)
@@ -463,7 +538,7 @@ class DrawView(View):
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
 
-    
+    '''
     @discord.ui.button(
         custom_id="button_apply_details",
         emoji="✨",
@@ -472,9 +547,18 @@ class DrawView(View):
         buttons_free = True
         try:
             # Vérification si l'action est réalisée par l'utilisateur qui a demandé l'image
-            if settings.global_var.restrict_buttons == 'True':
-                if interaction.user.id != self.input_tuple[0].author.id:
-                    buttons_free = False
+            #if settings.global_var.restrict_buttons == 'True':
+            #    if interaction.user.id != self.input_tuple[0].author.id:
+            #        buttons_free = False
+            
+            # Only Wizz can use this button
+            if interaction.user.id != 457981967712124948:
+                await interaction.response.send_message(
+                    "Only Wizz can use this button.",
+                    ephemeral=True
+                )
+                return
+            
             if buttons_free:
                 # Mise à jour du tuple pour conserver la même seed et modifier ADetailer et Highres_fix
                 new_input = list(self.input_tuple)
@@ -508,6 +592,7 @@ class DrawView(View):
             button.disabled = True
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("I may have been restarted. This button no longer works.", ephemeral=True)
+    '''
 
     # the 📋 button will let you review the parameters of the generation
     @discord.ui.button(
@@ -532,6 +617,60 @@ class DrawView(View):
             await interaction.followup.send("I may have been restarted. This button no longer works.\n"
                                             "You can get the image info from the context menu or **/identify**.",
                                             ephemeral=True)
+
+    @discord.ui.button(
+        custom_id="button_post_civitai",
+        emoji="🌐",
+        label="Post2Civitai")
+    async def button_post_civitai(self, button, interaction):
+        try:
+            WIZZ_ID = 457981967712124948
+
+            # Restriction : Only Wizz can clic !
+            if interaction.user.id != WIZZ_ID:
+                await interaction.response.send_message("Only Wizz can use this button. (;)", ephemeral=True)
+                return
+                    # Only allow if single image (batch == [1, 1])
+            batch = self.input_tuple[13]
+            if batch[0] != 1 or batch[1] != 1:
+                await interaction.response.send_message("Posting to Civitai is only available for single images.", ephemeral=True)
+                return
+
+            # Check if the output is from the person who requested it
+            if settings.global_var.restrict_buttons == 'True':
+                if interaction.user.id != self.input_tuple[0].author.id:
+                    await interaction.response.send_message("You can't post other people's images!", ephemeral=True)
+                    return
+
+            await interaction.response.defer(ephemeral=True)
+            attachment = self.message.attachments[0]
+            image_url = attachment.url
+
+            # Call your async function to post to civitai with playwright (to be implemented)
+            result = await civitaiposter.post_image_to_civitai(
+                image_url=image_url,
+                user_id=interaction.user.id
+            )
+            if result.get('success'):
+                msg = (
+                    f"✅ Successfully posted to Civitai!\n"
+                    f"[Open post]({result['post_url']})\n"
+                    f"[View image]({result['main_img_url']})\n"
+                    f"{result['main_img_url']}"
+                )
+                await interaction.followup.send(msg)
+            else:
+                await interaction.followup.send(
+                    f"❌ Failed to post to Civitai: {result.get('error', 'Unknown error')}", ephemeral=True
+                )
+        except Exception as e:
+            print('The Civitai post button broke: ' + str(e))
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(
+                f"An error occurred: {str(e)}\nTry again or check logs.",
+                ephemeral=True
+            )
 
     # the button to delete generated images
     @discord.ui.button(

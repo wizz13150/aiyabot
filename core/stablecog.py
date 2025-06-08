@@ -5,23 +5,31 @@ import csv
 import discord
 import io
 import math
+import os
 import random
 import requests
 import time
 import traceback
-from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
+#from core.mask_server import MaskEditorServer
 from PIL import Image, PngImagePlugin
-from discord import option
+from discord import option, OptionChoice
 from discord.ext import commands
 from typing import Optional
-
 from core import queuehandler
 from core import viewhandler
 from core import settings
 from core import settingscog
 from core.queuehandler import GlobalQueue
 from core.leaderboardcog import LeaderboardCog
+from core.color_correction_sharpening import apply_color_correction
+from core.persistence import save_message, load_all, delete_message
 
+USE_LLAMA_CPP = True
+
+if USE_LLAMA_CPP:
+    from llama_cpp import Llama
+else:
+    from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 
 
 # ratios dic
@@ -38,9 +46,12 @@ size_ratios = {
 
 class GPT2ModelSingleton:
     _instance = None
+    lock = asyncio.Lock()
+    llm = None
     model = None
     tokenizer = None
     pipe = None
+    model_name = None
 
     @classmethod
     def get_instance(cls):
@@ -51,23 +62,49 @@ class GPT2ModelSingleton:
 
     @classmethod
     def _load_model(cls):
-        model_path = "core/WizzGPT2-v2"
-        cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        cls.model = AutoModelForCausalLM.from_pretrained(model_path)
-        print("Load WizzGPT2-v2")
-        cls.pipe = pipeline('text-generation', model=cls.model, tokenizer=cls.tokenizer, max_length=75, temperature=1.1, top_k=24, repetition_penalty=1.35, eos_token_id=cls.tokenizer.eos_token_id, num_return_sequences=1, early_stopping=True)
+        if USE_LLAMA_CPP:
+            model_path = "core/WizzGPT6/WizzGPTv6.Q8_0.gguf"
+            cls.llm = Llama(
+                model_path=model_path,
+                n_ctx=1024,
+                n_threads=8,
+                use_mlock=True,
+                verbose=False,
+            )
+        else:
+            model_path = "core/WizzGPT6"
+            cls.tokenizer = AutoTokenizer.from_pretrained(model_path)
+            cls.model = AutoModelForCausalLM.from_pretrained(model_path)
+            cls.pipe = pipeline(
+                'text-generation',
+                model=cls.model,
+                tokenizer=cls.tokenizer,
+                num_return_sequences=1,
+                eos_token_id=cls.tokenizer.eos_token_id,
+                max_length=90,
+                temperature=1.25,
+                top_p=0.92,
+                top_k=40,
+                no_repeat_ngram_size=5,
+                repetition_penalty=1.4,
+                early_stopping=True
+            )
 
+            cls.llm = cls.pipe
+
+        if os.path.isdir(model_path):
+            cls.model_name = os.path.basename(model_path)
+        else:
+            cls.model_name = os.path.basename(os.path.dirname(model_path))
+
+infinite_flags = set()
+infinite_enqueue_lock = asyncio.Lock()
 
 class StableCog(commands.Cog, name='Stable Diffusion', description='Create images from natural language.'):
     ctx_parse = discord.ApplicationContext
 
     def __init__(self, bot, called_from_button=False):
         self.bot = bot
-        # load the gpt2 model to use for random_prompt
-        #if not called_from_button:
-        #    gpt2_singleton = GPT2ModelSingleton.get_instance()
-        #    self.pipe = gpt2_singleton.pipe
-        #else:
         self.pipe = None
 
     if len(settings.global_var.size_range) == 0:
@@ -76,25 +113,55 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         size_auto = None
 
     async def generate_prompt_async(self, prompt: str):
-        if self.pipe is None:
-            gpt2_singleton = GPT2ModelSingleton.get_instance()
-            self.pipe = gpt2_singleton.pipe
-        loop = asyncio.get_running_loop()
-        res = await loop.run_in_executor(None, lambda: self.pipe(prompt))
-        generated_text = res[0]['generated_text']
-        return generated_text
+        gpt2_singleton = GPT2ModelSingleton.get_instance()
+        llm = gpt2_singleton.llm
+        lock = GPT2ModelSingleton.lock
+
+        async with lock:
+            loop = asyncio.get_running_loop()
+            if USE_LLAMA_CPP:
+                res = await loop.run_in_executor(
+                    None,
+                    lambda: llm(
+                        prompt,
+                        max_tokens=75,
+                        temperature=1.25,
+                        top_p=0.90,
+                        #min_p=0.15,
+                        top_k=48,
+                        repeat_penalty=1.4
+                    )
+                )
+                generated = res["choices"][0]["text"]
+            else:
+                res = await loop.run_in_executor(None, lambda: llm(prompt))
+                if isinstance(res, list) and res and 'generated_text' in res[0]:
+                    generated = res[0]['generated_text']
+                else:
+                    generated = str(res)
+
+            return prompt + generated
 
     def get_random_word(self, filename):
-        with open(filename, newline='', encoding='utf-8') as csvfile:
-            reader = csv.reader(csvfile)
-            chosen_line = random.choice(list(reader))
-            return chosen_line[0]
+        chosen_line = None
+        try:
+            with open(filename, newline='', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                for count, row in enumerate(reader, start=1):
+                    # With probability 1/count, choose the current row
+                    if row and random.randrange(count) == 0:
+                        chosen_line = row
+        except Exception as e:
+            print(f"Error reading file: {e}")
+            return None
+
+        return chosen_line[0] if chosen_line else None
 
     @commands.Cog.listener()
     async def on_ready(self):
         self.bot.add_view(viewhandler.DrawView(self))
 
-    @commands.slash_command(name='draw', description='Create an image', guild_only=True)
+    @commands.slash_command(name='draw', description='Create an image')
     @option(
         'prompt',
         str,
@@ -104,9 +171,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
     @option(
         'random_prompt',
         str,
-        description='Generate a random image from a random prompt.',# Specify "True:x" for more prompts.',
+        description='Generate a random image from a random prompt.',
         required=False,
-        choices=["True"]
+        choices=['True', 'Infinite']
     )
     @option(
         'negative_prompt',
@@ -158,6 +225,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         required=False,
     )
     @option(
+        'distilled_cfg_scale',
+        str,
+        description='Distilled CFG Guidance scale.',
+        required=False,
+    )
+    @option(
         'sampler',
         str,
         description='The sampling method to use for generation.',
@@ -205,18 +278,18 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         required=False,
         choices=['Faces', 'Hands', 'Faces+Hands', 'Details++']
     )
-    @option(
-        'poseref',
-        str,
-        description='The pose reference image URL.',
-        required=False,
-    )
-    @option(
-        'ipadapter',
-        str,
-        description='The reference image URL for IPAdapter.',
-        required=False,
-    )
+    #@option(
+    #    'poseref',
+    #    str,
+    #    description='The pose reference image URL.',
+    #    required=False,
+    #)
+    #@option(
+    #    'ipadapter',
+    #    str,
+    #    description='The reference image URL for IPAdapter.',
+    #    required=False,
+    #)
     @option(
         'highres_fix',
         str,
@@ -224,12 +297,6 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         required=False,
         autocomplete=discord.utils.basic_autocomplete(settingscog.SettingsCog.hires_autocomplete),
     )
-    #@option(
-    #    'pag',
-    #    bool,
-    #    description='Activate Perturbed Attention Guidance for more dynamic results.',
-    #    required=False,
-    #)
     @option(
         'clip_skip',
         int,
@@ -266,9 +333,11 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             negative_prompt: str = None,
                             data_model: Optional[str] = None,
                             steps: Optional[int] = None,
-                            width: Optional[int] = None, height: Optional[int] = None,
+                            width: Optional[int] = None, 
+                            height: Optional[int] = None,
                             size_ratio: Optional[str] = None,
                             guidance_scale: Optional[str] = None,
+                            distilled_cfg_scale: Optional[str] = None,
                             sampler: Optional[str] = None,
                             scheduler: Optional[str] = None,
                             seed: Optional[int] = -1,
@@ -277,13 +346,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             extra_net: Optional[str] = None,
                             adetailer: Optional[bool] = None,
                             highres_fix: Optional[str] = None,
-                            #pag: Optional[bool] = False,
                             clip_skip: Optional[int] = None,
                             strength: Optional[str] = None,
                             init_image: Optional[discord.Attachment] = None,
                             init_url: Optional[str] = None,
-                            poseref: Optional[discord.Attachment] = None,
-                            ipadapter: Optional[discord.Attachment] = None,
+                            #poseref: Optional[discord.Attachment] = None,
+                            #ipadapter: Optional[discord.Attachment] = None,
                             batch: Optional[str] = None):
 
         called_from_button = getattr(ctx, 'called_from_button', False)
@@ -291,6 +359,38 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         # check if one of prompt or random_prompt option is enabled
         if not prompt and not random_prompt:
             await ctx.respond("Please provide a prompt or enable random prompt generation.", ephemeral=True)
+            return
+
+        if random_prompt == "Infinite":
+            # on prévient l'utilisateur et on démarre la loop
+            await ctx.respond("⏯️ Infinite random generation started. Use `/stopdraw` to stop.")
+            infinite_flags.add(ctx.author.id)
+            loop_opts = {
+                "random_style": random_style,
+                "negative_prompt": negative_prompt,
+                "data_model":      data_model,
+                "steps":           steps,
+                "width":           width,
+                "height":          height,
+                "size_ratio":      size_ratio,
+                "guidance_scale":  guidance_scale,
+                "distilled_cfg_scale": distilled_cfg_scale,
+                "sampler":         sampler,
+                "scheduler":       scheduler,
+                "styles":          styles,
+                "extra_net":       extra_net,
+                "adetailer":       adetailer,
+                "highres_fix":     highres_fix,
+                "clip_skip":       clip_skip,
+                "strength":        strength,
+                "init_image":      init_image,
+                "init_url":        init_url,
+                #"poseref":         poseref,
+                #"ipadapter":       ipadapter,
+                "batch":           batch
+            }
+            # lance en arrière-plan la boucle infinie AVEC ces options
+            asyncio.create_task(self._infinite_loop(ctx, **loop_opts))
             return
 
         # generate a random prompt if random_prompt is True
@@ -340,6 +440,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             height = settings.read(channel)['height']
         if guidance_scale is None:
             guidance_scale = settings.read(channel)['guidance_scale']
+        if distilled_cfg_scale is None:
+            distilled_cfg_scale = settings.read(channel)['distilled_cfg_scale']
         if sampler is None:
             sampler = settings.read(channel)['sampler']
         if scheduler is None:
@@ -420,18 +522,27 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             steps = settings.read(channel)['max_steps']
             reply_adds += f'\nExceeded maximum of ``{steps}`` steps! This is the best I can do...'
         if model_name != 'Default':
-            reply_adds += f'\nModel: ``{model_name}``'
+            if random_prompt in ("True", "Infinite"):
+                gpt2_model_singleton = GPT2ModelSingleton.get_instance()
+                reply_adds += f'\nModel: ``{model_name}`` (GPT2: {gpt2_model_singleton.model_name})'
+            else:
+                reply_adds += f'\nModel: ``{model_name}``'
         if clean_negative != settings.read(channel)['negative_prompt']:
             reply_adds += f'\nNegative Prompt: ``{clean_negative}``'
         if guidance_scale != settings.read(channel)['guidance_scale']:
-            # try to convert string to Web UI-friendly float
             try:
-                guidance_scale = guidance_scale.replace(",", ".")
-                float(guidance_scale)
+                guidance_scale = float(str(guidance_scale).replace(",", "."))
                 reply_adds += f'\nGuidance Scale: ``{guidance_scale}``'
-            except(Exception,):
-                reply_adds += f"\nGuidance Scale can't be ``{guidance_scale}``! Setting to default of `7.0`."
-                guidance_scale = 7.0
+            except Exception:
+                reply_adds += f"\nGuidance Scale can't be ``{guidance_scale}``! Setting to default of `5.5`."
+                guidance_scale = 5.5
+        if distilled_cfg_scale != settings.read(channel)['distilled_cfg_scale']:
+            try:
+                distilled_cfg_scale = float(str(distilled_cfg_scale).replace(",", "."))
+                reply_adds += f'\nDistilled CFG Scale: ``{distilled_cfg_scale}``'
+            except Exception:
+                reply_adds += f"\nDistilled CFG Scale can't be ``{distilled_cfg_scale}``! Setting to default of `3.5`."
+                distilled_cfg_scale = 3.5
         if sampler != settings.read(channel)['sampler']:
             reply_adds += f'\nSampler: ``{sampler}``'
         if scheduler != settings.read(channel)['scheduler']:
@@ -487,17 +598,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 reply_adds += f' (multiplier: ``{net_multi}``)'
         if clip_skip != settings.read(channel)['clip_skip']:
             reply_adds += f'\nCLIP skip: ``{clip_skip}``'
-        if poseref is not None:
-            reply_adds += f'\nPose Reference URL: ``{poseref}``'
-        if ipadapter is not None:
-            reply_adds += f'\nIPAdapter Reference URL: ``{ipadapter}``'
+        #if poseref is not None:
+        #    reply_adds += f'\nPose Reference URL: ``{poseref}``'
+        #if ipadapter is not None:
+        #    reply_adds += f'\nIPAdapter Reference URL: ``{ipadapter}``'
 
         epoch_time = int(time.time())
 
         # set up tuple of parameters to pass into the Discord view
         input_tuple = (
             ctx, simple_prompt, prompt, negative_prompt, data_model, steps, width, height, guidance_scale, sampler, seed, strength,
-            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, poseref, ipadapter, scheduler)
+            init_image, batch, styles, highres_fix, clip_skip, extra_net, epoch_time, adetailer, scheduler, distilled_cfg_scale)# poseref, ipadapter
 
         view = viewhandler.DrawView(input_tuple)
         # setup the queue
@@ -541,20 +652,91 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
         # send to discord
         if called_from_button:
             await ctx.channel.send(message_to_send)
-        elif deferred:
-            await ctx.send_followup(content=message_to_send)
+        elif getattr(ctx, "_infinite_job", False):
+            await ctx.channel.send(message_to_send)
         else:
-            await ctx.send_response(message_to_send)
+            if not ctx.interaction.response.is_done():
+                await ctx.respond(message_to_send)
+            else:
+                await ctx.followup.send(message_to_send)
+
+    @commands.slash_command(name='stopdraw', description='Stop infinite random generation')
+    @commands.guild_only()
+    async def stop_draw(self, ctx: discord.ApplicationContext):
+        user_id = ctx.author.id
+        if user_id in infinite_flags:
+            infinite_flags.remove(user_id)
+            await ctx.respond("🛑 Infinite generation stopped !")
+        else:
+            await ctx.respond("❌ No Infinite generation to stop.", ephemeral=True)
+
+    # === MODIF : helper pour la boucle infinie
+    async def _infinite_loop(self, ctx: discord.ApplicationContext, **opts):
+        try:
+            while ctx.author.id in infinite_flags:
+                start_prompt = self.get_random_word('resources/random_prompts.csv')
+                generated_prompt = await self.generate_prompt_async(start_prompt)
+                async with infinite_enqueue_lock:
+                    ctx._infinite_job = True
+                    await self.dream_handler(
+                        ctx,
+                        prompt=generated_prompt,
+                        random_prompt=None,
+                        **opts
+                    )
+                    delattr(ctx, "_infinite_job")
+
+                while queuehandler.GlobalQueue.dream_thread.is_alive():
+                    await asyncio.sleep(3)
+                print("Infinite job done, next one will start soon\n")
+
+                await asyncio.sleep(1)
+
+        except Exception as e:
+            print(f"[InfiniteLoop] erreur pour {ctx.author.id} : {e}")
+        finally:
+            # s’assure qu’on enlève le flag si erreur ou fin
+            infinite_flags.discard(ctx.author.id)
+
 
     # the function to queue Discord posts
     def post(self, event_loop: queuehandler.GlobalQueue.post_event_loop, post_queue_object: queuehandler.PostObject):
-        event_loop.create_task(
-            post_queue_object.ctx.channel.send(
-                content=post_queue_object.content,
-                file=post_queue_object.file,
-                view=post_queue_object.view
-            )
-        )
+        async def send_message():
+            embed = post_queue_object.embed
+            # Patch: always pass a valid embed (discord.Embed or list or None)
+            if embed is not None and not isinstance(embed, (discord.Embed, list)):
+                embed = None
+            try:
+                await post_queue_object.ctx.channel.send(
+                    content=post_queue_object.content,
+                    file=post_queue_object.file,
+                    embed=embed,
+                    view=post_queue_object.view
+                )
+            except discord.HTTPException as e:
+                if e.code == 40005 or "Payload Too Large" in str(e):
+                    file = post_queue_object.file
+                    file_size_mb = None
+                    if file and hasattr(file, "fp"):
+                        try:
+                            fp = file.fp
+                            if hasattr(fp, "getbuffer"):
+                                file_size_mb = len(fp.getbuffer()) / (1024 * 1024)
+                            elif hasattr(fp, "name") and os.path.exists(fp.name):
+                                file_size_mb = os.path.getsize(fp.name) / (1024 * 1024)
+                        except Exception:
+                            file_size_mb = None
+                    mb = f"{file_size_mb:.2f}" if file_size_mb is not None else "unknown"
+                    await post_queue_object.ctx.channel.send(
+                        f"❌ Failed to send image: file size is {mb} MB, but it exceeds the server's allowed file size limit."
+                    )
+                else:
+                    await post_queue_object.ctx.channel.send(
+                        f"❌ An error occurred while sending the image: {str(e)}"
+                    )
+
+        event_loop.create_task(send_message())
+
         if queuehandler.GlobalQueue.post_queue:
             self.post(self.event_loop, self.queue.pop(0))
 
@@ -585,8 +767,9 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 "width": queue_object.width,
                 "height": queue_object.height,
                 "cfg_scale": queue_object.guidance_scale,
-                "sampler_index": queue_object.sampler,
-                "scheduler_index": queue_object.scheduler,
+                "distilled_cfg_scale": queue_object.distilled_cfg_scale,
+                "sampler_name": queue_object.sampler,
+                "scheduler": queue_object.scheduler,
                 "seed": queue_object.seed,
                 "seed_resize_from_h": -1,
                 "seed_resize_from_w": -1,
@@ -614,20 +797,24 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 channel_id = str(queue_object.ctx.channel.id)
                 queue_object.highres_fix = settings.read(channel_id)['upscaler_1']
 
-
             # hires payload
             if queue_object.highres_fix != 'Disabled':
-                upscale_ratio = 1.4
+                upscale_ratio = 1.6
                 queue_object.width = int(queue_object.width * upscale_ratio)
                 queue_object.height = int(queue_object.height * upscale_ratio)
                 highres_payload = {
                     "enable_hr": True,
                     "hr_upscaler": queue_object.highres_fix,
                     "hr_scale": upscale_ratio,
-                    "hr_second_pass_steps": int(queue_object.steps)/1.3,
-                    "denoising_strength": 0.52 #, #queue_object.strength,
+                    "hr_cfg": float(queue_object.guidance_scale),
+                    "hr_distilled_cfg": float(queue_object.distilled_cfg_scale),
+                    "hr_second_pass_steps": int(queue_object.steps / 1.3),
+                    "denoising_strength": 0.48, #queue_object.strength, # 0.48s
+                    "hr_prompt": "(Sharp focus:2), " + queue_object.prompt,
+                    "hr_negative_prompt": "(Undersaturated, washed colors), (blurry), (poorly drawn:2), " + queue_object.negative_prompt,
                     #"hr_prompt": "(subsurface scattering:2), (extremely fine details:2), (consistency:2), smooth, round pupils, perfect teeth, perfect hands, (extremely detailed teeth:2), (extremely detailed hands:2), (extremely detailed face:2), (extremely detailed eyes:2), photorealism, film grain, candid camera, color graded cinematic, eye catchlights, atmospheric lighting, shallow dof, " + queue_object.prompt,
                     #"hr_negative_prompt": "(low quality:2), (worst quality:2), (bad hands:2), (ugly eyes:2), (fused fingers:2), (elongated fingers:2), (additionnal fingers:2), missing fingers, long nails, grainy, (intricated patterns:2), (intricated vegetation:2), grainy, lowres, noise, poor detailing, unprofessional, unsmooth, license plate, aberrations, collapsed, conjoined, extra windows, harsh lighting, multiple levels, overexposed, rotten, sketchy, twisted, underexposed, unnatural, unreal engine, unrealistic, video game, (poorly rendered face:2), " + queue_object.negative_prompt
+                    "hr_additional_modules": ["Use same choices"],
                 }
                 payload.update(highres_payload)
 
@@ -640,7 +827,7 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             if queue_object.adetailer and queue_object.adetailer != "None":
                 model_mappings = {
                     "Faces": {
-                        "ad_model": "face_yolov8m.pt",
+                        "ad_model": "face_yolov8s.pt",
                         "ad_use_inpaint_width_height": True,
                         "ad_inpaint_width": 1024,
                         "ad_inpaint_height": 1024,
@@ -650,13 +837,13 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         "ad_mask_blur": 4,
                         "ad_inpaint_only_masked": True,
                         "ad_inpaint_only_masked_padding": 32,
-                        #"ad_use_noise_multiplier": True,
-                        #"ad_noise_multiplier": 1.025,
+                        "ad_use_noise_multiplier": True,
+                        "ad_noise_multiplier": 0.85,
                         "ad_prompt": "(extremely detailed face), (fine detailed eyes), raytracing, subsurface scattering, hyperrealistic, extreme skin details, skin pores, deep shadows, subsurface scattering, amazing textures, filmic, macro, shallow dof, shallow depth of field, beautiful eyes, extremely detailed pupil, " + queue_object.prompt,
                         "ad_negative_prompt": "(low quality:2), (asymmetric eyes, bad eyes:2), lowres, (heterochromia:2)"
                     },
                     "Hands": {
-                        "ad_model": "hand_yolov8s.pt",
+                        "ad_model": "hand_yolov8n.pt",
                         "ad_use_inpaint_width_height": True,
                         "ad_inpaint_width": 1024,
                         "ad_inpaint_height": 1024,
@@ -666,8 +853,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         "ad_mask_blur": 4,
                         "ad_inpaint_only_masked": True,
                         "ad_inpaint_only_masked_padding": 32,
-                        "ad_use_noise_multiplier": False,
-                        "ad_noise_multiplier": 1.03,
+                        "ad_use_noise_multiplier": True,
+                        "ad_noise_multiplier": 0.85,
                         "ad_prompt": "(extremely detailed hand), (extremely detailed fingers), natural nails color, " + queue_object.prompt,
                         "ad_negative_prompt": "(low quality:2), (malformed:2), lowres, colored nails, undetailed hand, fused fingers, elongated fingers, wrong hand anatomy, additionnal fingers, missing fingers, inversed hand"
                         #"ad_controlnet_module": "openpose_full",
@@ -692,40 +879,40 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
             controlnet_args = []
 
             # Vérification et ajout de la configuration pour poseref
-            if queue_object.poseref is not None:
-                pimage = base64.b64encode(requests.get(queue_object.poseref, stream=True).content).decode('utf-8')
-                poseref_payload = {
-                    "input_image": 'data:image/png;base64,' + pimage,
-                    "control_mode": "Balanced",
-                    "pixel_perfect": True,
-                    "loopback": False,
-                    "low_vram": True,
-                    "module": "openpose_full",
-                    "model": "control_openpose-fp16 [72a4faf9]",
-                    "resize_mode": "Resize and Fill",
-                    "weight": 1,
-                    "preprocessor_res": 768
-                }
-                controlnet_args.append(poseref_payload)
+            #if queue_object.poseref is not None:
+            #    pimage = base64.b64encode(requests.get(queue_object.poseref, stream=True).content).decode('utf-8')
+            #    poseref_payload = {
+            #        "input_image": 'data:image/png;base64,' + pimage,
+            #        "control_mode": "Balanced",
+            #        "pixel_perfect": True,
+            #        "loopback": False,
+            #        "low_vram": True,
+            #        "module": "openpose_full",
+            #        "model": "control_openpose-fp16 [72a4faf9]",
+            #        "resize_mode": "Resize and Fill",
+            #        "weight": 1,
+            #        "preprocessor_res": 768
+            #    }
+            #    controlnet_args.append(poseref_payload)
 
             # Vérification et ajout de la configuration pour ipadapter
-            if queue_object.ipadapter is not None:
-                pimage = base64.b64encode(requests.get(queue_object.ipadapter, stream=True).content).decode('utf-8')
-                ipadapter_payload = {
-                    "input_image": 'data:image/png;base64,' + pimage,
-                    "control_mode": "My prompt is more important",
-                    "pixel_perfect": True,
-                    "loopback": False,
-                    "low_vram": True,
-                    "module": "ip-adapter_clip_sdxl",
-                    "model": "IpAdapter [af81326a]",
-                    "resize_mode": "Resize and Fill",
-                    "weight": 0.70 #,
-                    #"preprocessor_res": 768,
-                    #"guidance_start": 0.0,
-                    #"guidance_end": 1.0
-                }
-                controlnet_args.append(ipadapter_payload)
+           # if queue_object.ipadapter is not None:
+           #     pimage = base64.b64encode(requests.get(queue_object.ipadapter, stream=True).content).decode('utf-8')
+           #     ipadapter_payload = {
+           #         "input_image": 'data:image/png;base64,' + pimage,
+           #         "control_mode": "My prompt is more important",
+           #         "pixel_perfect": True,
+           #         "loopback": False,
+           #         "low_vram": True,
+           #         "module": "ip-adapter_clip_sdxl",
+           #         "model": "IpAdapter [af81326a]",
+           #         "resize_mode": "Resize and Fill",
+           #         "weight": 0.70 #,
+           #         #"preprocessor_res": 768,
+           #         #"guidance_start": 0.0,
+           #         #"guidance_end": 1.0
+           #s     }
+           #     controlnet_args.append(ipadapter_payload)
 
             # Ajout des configurations controlnet au alwayson_scripts_settings s'il y a des éléments dans controlnet_args
             if controlnet_args:
@@ -752,7 +939,47 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 try:
                     s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=model_payload)
                 except requests.exceptions.ConnectionError:
-                    print("Connection error. No response from API. (StableCog l.777)")
+                    print("Connection error. No response from API. (StableCog l.756)")
+
+            is_flux = "flux" in queue_object.data_model.lower()
+
+            # Gérer le preset
+            forge_preset = "flux" if is_flux else "sdxl"
+
+            # Gérer le storage dtype
+            if "nf4" in queue_object.data_model.lower():
+                forge_unet_storage_dtype = "bnb-fp4 (fp16 LoRA)"
+            else:
+                forge_unet_storage_dtype = "Automatic (fp16 LoRA)"
+
+            # Modules à charger
+            modules_dir = "C:\\Users\\wizz\\stable-diffusion\\stable-diffusion-webui-forge\\models\\text_encoder\\"
+            modules_to_load = [
+                modules_dir + "ViT-L-14-REG-GATED-balanced-ckpt12.safetensors"
+            ]
+            if is_flux:
+                modules_to_load += [
+                    modules_dir + "t5xxl_fp16.safetensors",
+                    modules_dir + "flux_vae.safetensors"
+                ]
+            else:
+                modules_to_load += [
+                    modules_dir + "sdxl_vae.safetensors"
+                ]
+
+            # Construire le payload options complet
+            forge_options_payload = {
+                "forge_preset": forge_preset,
+                "forge_additional_modules": modules_to_load,
+                "forge_unet_storage_dtype": forge_unet_storage_dtype,
+                "img2img_extra_noise": 0.015 if is_flux else 0.045
+            }
+
+            # Envoi la configuration à /options
+            try:
+                s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=forge_options_payload)
+            except requests.exceptions.ConnectionError:
+                print("Connection error. No response from API pour forge options.")
 
             if queue_object.init_image is not None:
                 response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=payload)
@@ -768,11 +995,45 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                 upscaled_images_metadata = []
 
                 # adjust values
-                custom_scale, denoising_strength = (2.1, queue_object.strength) if queue_object.adetailer == 'Details++' else (1, 0.10)
+                custom_scale, denoising_strength = (2.4, 0.42) if queue_object.adetailer == 'Details++' else (1, 0.10)
                 tile_width = int(queue_object.width * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.width * custom_scale)
                 tile_height = int(queue_object.height * custom_scale) / 3 if queue_object.highres_fix != 'Disabled' else int(queue_object.height * custom_scale)
                 queue_object.width = int(queue_object.width * custom_scale)
                 queue_object.height = int(queue_object.height * custom_scale)
+
+                # update the Extra Noise setting
+                response = requests.get(url=f'{settings.global_var.url}/sdapi/v1/options')
+
+                is_flux = "flux" in queue_object.data_model.lower()
+
+                # Adapt noise values to model type
+                if is_flux:
+                    default_extra_noise = 0.015
+                    default_initial_noise = 1
+                else:
+                    default_extra_noise = 0.045
+                    default_initial_noise = 1
+
+                if response.ok:
+                    current_options = response.json()
+                    original_extra_noise = current_options.get("img2img_extra_noise", default_extra_noise)
+                    original_initial_noise = current_options.get("initial_noise_multiplier", default_initial_noise)
+                    print(f"Original Extra Noise to restore after Details++: {original_extra_noise}")
+                    print(f"Original Initial Noise to restore after Details++: {original_initial_noise}")
+                else:
+                    print("Error retrieving options")
+
+                if is_flux:
+                    option_payload = {"img2img_extra_noise": 0, "initial_noise_multiplier": 1.02}
+                else:
+                    option_payload = {"img2img_extra_noise": 0, "initial_noise_multiplier": 1.11}
+
+                response = s.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=option_payload)
+                if response.ok:
+                    print("Options updated successfully for Details++")
+                else:
+                    print("Error updating options")
+
 
                 for index, generated_image_base64 in enumerate(generated_images):
                     original_image = Image.open(io.BytesIO(base64.b64decode(generated_image_base64)))
@@ -783,15 +1044,15 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
                     # adjust steps
                     steps_as_int = int(queue_object.steps)
-                    adjusted_steps = int(steps_as_int * 1.6)
+                    adjusted_steps = int(steps_as_int * 1.5)
 
                     upscale_payload = {
-                        "prompt": queue_object.prompt,
-                        "negative_prompt": queue_object.negative_prompt,
+                        "prompt": "(Sharp focus:2), " + queue_object.prompt,
+                        "negative_prompt": "(Undersaturated, washed colors), (blurry), (poorly drawn:2), " + queue_object.negative_prompt,
                         "steps": adjusted_steps,
                         "cfg_scale": queue_object.guidance_scale,
-                        "sampler_index": queue_object.sampler,
-                        "scheduler_index": queue_object.scheduler,
+                        "sampler_name": queue_object.sampler,
+                        "scheduler": queue_object.scheduler,
                         "seed": queue_object.seed,
                         "denoising_strength": denoising_strength,
                         "script_name": "ultimate sd upscale",
@@ -799,16 +1060,16 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             None,  # _ (not used)
                             tile_width,  # tile_width
                             tile_height,  # tile_height
-                            64,  # mask_blur
-                            256,  # padding
+                            0,  # mask_blur
+                            448,  # padding
                             64,  # seams_fix_width
                             0.30,  # seams_fix_denoise
                             256,  # seams_fix_padding
-                            5,  # upscaler_index
+                            6,  # upscaler_index
                             True,  # save_upscaled_image a.k.a Upscaled
                             0,  # redraw_mode
                             False,  # save_seams_fix_image a.k.a Seams fix
-                            8,  # seams_fix_mask_blur
+                            0,  # seams_fix_mask_blur
                             0,  # seams_fix_type
                             1,  # target_size_type
                             queue_object.width,  # custom_width
@@ -820,16 +1081,16 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                         ]
                     }
 
-                    #soft_inpainting_payload = {
-                    #    "Soft inpainting": True,
-                    #    "Schedule bias": 1,
-                    #    "Preservation strength": 0.5,
-                    #    "Transition contrast boost": 4,
-                    #    "Mask influence": 0,
-                    #    "Difference threshold": 0.5,
-                    #    "Difference contrast": 2,
-                    #}
-                    #upscale_payload["alwayson_scripts"] = {"soft inpainting": {"args": [soft_inpainting_payload]}}
+                    soft_inpainting_payload = {
+                        "Soft inpainting": True,
+                        "Schedule bias": 0.45,           # Encore plus tôt → plus progressif
+                        "Preservation strength": 0.14,   # Moins de préservation → plus de fondu/blend
+                        "Transition contrast boost": 0.8,# Réduit drastiquement le contraste dans la zone de transition
+                        "Mask influence": 0.5,           # Légèrement + d’importance au masque
+                        "Difference threshold": 0.19,    # Plus sensible aux petites différences
+                        "Difference contrast": 0.42,     # Encore + doux
+                    }
+                    upscale_payload["alwayson_scripts"] = {"soft inpainting": {"args": [soft_inpainting_payload]}}
 
                     # Details ++
                     if queue_object.adetailer == 'Details++':
@@ -839,11 +1100,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                                     True,
                                     False,
                                     {
-                                        "ad_model": "face_yolov8m.pt",
+                                        "ad_model": "face_yolov8s.pt",
                                         "ad_use_inpaint_width_height": True,
                                         "ad_inpaint_width": 1024,
                                         "ad_inpaint_height": 1024,
                                         "ad_denoising_strength": 0.36,
+                                        "ad_noise_multiplier": 0.85,
                                         "ad_dilate_erode": 4,
                                         "ad_mask_max_ratio": 0.25,
                                         "ad_mask_blur": 4,
@@ -855,11 +1117,12 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                                         "ad_negative_prompt": "(low quality:2), (asymmetric eyes, bad eyes:2), lowres, (heterochromia:2)"
                                     },
                                     {
-                                        "ad_model": "hand_yolov8s.pt",
+                                        "ad_model": "hand_yolov8n.pt",
                                         "ad_use_inpaint_width_height": True,
                                         "ad_inpaint_width": 1024,
                                         "ad_inpaint_height": 1024,
                                         "ad_denoising_strength": 0.45,
+                                        "ad_noise_multiplier": 0.85,
                                         "ad_dilate_erode": 4,
                                         "ad_mask_max_ratio": 0.15,
                                         "ad_mask_blur": 4,
@@ -893,19 +1156,19 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                             }
                         }
 
-                        if queue_object.highres_fix != 'Disabled':
-                            soft_inpainting_payload = {
-                                "Soft inpainting": True,
-                                "Schedule bias": 1,
-                                "Preservation strength": 0.5,
-                                "Transition contrast boost": 4,
-                                "Mask influence": 0,
-                                "Difference threshold": 0.5,
-                                "Difference contrast": 2,
-                            }
-                            combined_alwayson_scripts_payload["soft inpainting"] = {"args": [soft_inpainting_payload]}
+                        #if queue_object.highres_fix != 'Disabled':
+                        #    soft_inpainting_payload = {
+                        #        "Soft inpainting": True,
+                        #        "Schedule bias": 1,
+                        #        "Preservation strength": 0.5,
+                        #        "Transition contrast boost": 4,
+                        #        "Mask influence": 0,
+                        #        "Difference threshold": 0.5,
+                        #        "Difference contrast": 2,
+                        #    }
+                        #    combined_alwayson_scripts_payload["soft inpainting"] = {"args": [soft_inpainting_payload]}
 
-                        upscale_payload["alwayson_scripts"] = combined_alwayson_scripts_payload
+                        #upscale_payload["alwayson_scripts"] = combined_alwayson_scripts_payload
 
                     # Send payload to img2img
                     upscale_response = s.post(url=f'{settings.global_var.url}/sdapi/v1/img2img', json=upscale_payload)
@@ -924,6 +1187,17 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
                 response_data["images"] = upscaled_images_data
 
+                # restore the original extra noise
+                restore_payload = {
+                    "img2img_extra_noise": original_extra_noise,
+                    "initial_noise_multiplier": original_initial_noise
+                }
+                response = requests.post(url=f'{settings.global_var.url}/sdapi/v1/options', json=restore_payload)
+                if response.ok:
+                    print(f"Options restored successfully to {original_extra_noise} & {original_initial_noise}")
+                else:
+                    print("Error restoring options")
+
             end_time = time.time()
 
             # create safe/sanitized filename
@@ -933,6 +1207,15 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             # save local copy of image and prepare PIL images
             image_data = response_data['images']
+            if not image_data or len(image_data) == 0:
+                print("[dream] No images generated in response_data['images']")
+                # Optionally: send a Discord error message
+                event_loop.create_task(queue_object.ctx.channel.send(
+                    "❌ Image generation failed (no image was returned by the model)."
+                ))
+                queue_object.is_done = True
+                return
+            
             count = 0
             image_count = len(image_data)
             batch = False
@@ -1009,8 +1292,8 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
                     new_tuple = tuple(new_epoch)
                     queue_object.view.input_tuple = new_tuple
 
-                if queue_object.poseref is not None or queue_object.ipadapter is not None:
-                    break
+                #if queue_object.poseref is not None or queue_object.ipadapter is not None:
+                #    break
 
             # progression flag, job done
             queue_object.is_done = True
@@ -1074,12 +1357,13 @@ class StableCog(commands.Cog, name='Stable Diffusion', description='Create image
 
             else:
                 content = f'<@{queue_object.ctx.author.id}>, {message}'
-                image = image.resize((queue_object.width, queue_object.height))
-                #if queue_object.poseref is not None:
-                #    filename=f'{queue_object.seed}-1.png'
-                #else:
-                filename=f'{queue_object.seed}-{count}.png'
-                file = add_metadata_to_image(image,str_parameters, filename)
+                # Apply adaptive color correction + sharpening if Details++ is selected
+                if getattr(queue_object, "adetailer", None) == 'Details++':
+                    # Resize first (optionnel selon workflow)
+                    image = image.resize((int(queue_object.width * 0.75), int(queue_object.height * 0.75)))
+                    image = apply_color_correction(image)
+                filename = f'{queue_object.seed}-{count}.png'
+                file = add_metadata_to_image(image, str_parameters, filename)
                 queuehandler.process_post(
                     self, queuehandler.PostObject(
                         self, queue_object.ctx, content=content, file=file, embed='', view=view))
