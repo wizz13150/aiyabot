@@ -2,7 +2,10 @@ py-cord
 python-dotenv
 requests
 pillow
-discord
 tomlkit
 urlextract
 gpt4all
+numpy
+opencv-python
+playwright
+tqdm
