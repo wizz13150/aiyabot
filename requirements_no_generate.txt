@@ -4,7 +4,6 @@ requests
 pillow
 tomlkit
 urlextract
-gpt4all
 numpy
 opencv-python
 playwright
