@@ -1,9 +1,9 @@
-# Customized version of the bot. 
+# Customized version of the bot, for FORGE. 
 Also need to manually install 3 extensions in the webui: 
 - ControlNet (Openpose and IPAdapter, for the related /Draw options)
 https://github.com/Mikubill/sd-webui-controlnet
 - Deforum (for the /Deforum command)
-https://github.com/deforum-art/sd-webui-deforum
+https://github.com/deforum-art/sd-forge-deforum
 - ADetailer (for the related /Draw option)
 https://github.com/Bing-su/adetailer<br>
 
