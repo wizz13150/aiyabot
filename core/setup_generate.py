@@ -40,14 +40,23 @@ for file in files_to_download_1:
         url = base_url_1 + file
         download_with_tqdm(url, filepath)
 
-# ------ Meta-Llama-3.1-8B-Instruct-gguf ------
-model_folder_2 = "core/Meta-Llama-3.1-8B-Instruct-gguf"
+# ----- Llama-3.2-11B-Vision-Instruct GGUF -----
+model_folder_2 = "core/Llama-3.2-11B-Vision-Instruct-gguf"
 os.makedirs(model_folder_2, exist_ok=True)
-base_url_2 = "https://huggingface.co/ggml-org/Meta-Llama-3.1-8B-Instruct-Q4_0-GGUF/resolve/main/"
-files_to_download_2 = ["meta-llama-3.1-8b-instruct-q4_0.gguf"]
+base_url_2 = "https://huggingface.co/leafspark/Llama-3.2-11B-Vision-Instruct-GGUF/resolve/main/"
+files_to_download_2 = ["Llama-3.2-11B-Vision-Instruct.Q4_K_M.gguf"]
 for file in files_to_download_2:
     filepath = os.path.join(model_folder_2, file)
     if not os.path.isfile(filepath):
-        print(f"Missing file for Meta-Llama-3.1-8B-Instruct-gguf: {file}")
+        print(f"Missing file for Llama-3.2-11B-Vision-Instruct-gguf: {file}")
         url = base_url_2 + file
         download_with_tqdm(url, filepath)
+
+for file in files_to_download_2:
+    filepath = os.path.join(model_folder_2, file)
+    if not os.path.isfile(filepath):
+        print(f"Downloading: {file}")
+        url = base_url_2 + file
+        download_with_tqdm(url, filepath)
+    else:
+        print(f"Already exists: {file}")
