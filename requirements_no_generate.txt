@@ -4,6 +4,9 @@ requests
 pillow
 tomlkit
 urlextract
+transformers
+torch
+llama-cpp-python
 numpy
 opencv-python
 playwright
